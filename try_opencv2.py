@@ -1,3 +1,4 @@
+# filter pics without downscaling image
 import cv2
 import numpy as np
 
