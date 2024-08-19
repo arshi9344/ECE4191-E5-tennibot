@@ -1,3 +1,4 @@
+# try the torch code Michael gave us, not finished yet
 import torch
 import torchvision
 import torchvision.transforms as transforms
