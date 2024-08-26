@@ -97,7 +97,6 @@ class TentaclePlanner:
         plt.show()
 
     def visualize_plan(self, goal_x, goal_y, goal_th, x, y, th, extrapolation_steps=100):
-        print('eheheheheeh')
         v, w = self.plan(goal_x, goal_y, goal_th, x, y, th)
 
         plt.figure(figsize=(10, 10))
@@ -134,12 +133,12 @@ planner.visualize_tentacles(0, 0, 0)
 planner.visualize_plan(5, 5, np.pi / 4, 0, 0, 0)
 """
 
-# Create a TentaclePlanner instance
-obstacles = np.array([[1, 1], [2, 2], [3, 1]])  # Example obstacles
-planner = TentaclePlanner(obstacles)
+# # Create a TentaclePlanner instance
+# obstacles = np.array([[1, 1], [2, 2], [3, 1]])  # Example obstacles
+# planner = TentaclePlanner(obstacles)
 
-# Visualize all tentacles from a starting position
-planner.visualize_tentacles(0, 0, 0)
+# # Visualize all tentacles from a starting position
+# planner.visualize_tentacles(0, 0, 0)
 
-# Visualize the planned path to a goal
-planner.visualize_plan(5, 5, np.pi / 4, 0, 0, 0)
+# # Visualize the planned path to a goal
+# planner.visualize_plan(5, 5, np.pi / 4, 0, 0, 0)
