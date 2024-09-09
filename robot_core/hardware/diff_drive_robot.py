@@ -37,8 +37,8 @@ class DiffDriveRobot:
         #         self.wl_prev = 0
         #         self.wr_prev = 0
 
-        self.wl_smoothed = LowPassFilter(tau)
-        self.wr_smoothed = LowPassFilter(tau)
+        self.wl_smoothed_func = LowPassFilter(tau)
+        self.wr_smoothed_func = LowPassFilter(tau)
 
         self.dt = dt  # time delta in seconds. The control loop runs every dt. Faster means the control loop runs more often. We can increase this to reduce CPU load on our robot.
         self.r = wheel_radius  # wheel radius in meters.
@@ -82,6 +82,14 @@ class DiffDriveRobot:
     @property
     def pose(self):
         return self.x, self.y, self.th
+
+    @property
+    def wl_smoothed(self):
+        return self.wl_smoothed_func.value
+
+    @property
+    def wr_smoothed(self):
+        return self.wr_smoothed_func.value
 
     def _get_encoder_delta(self, curr_value, prev_value):
         raw_delta = curr_value - prev_value
@@ -134,8 +142,8 @@ class DiffDriveRobot:
         self.wr = mr_delta_rad / dt  # rad/s
 
         # Calculate smoothed velocities
-        self.wl_smoothed.update(self.wl, dt)
-        self.wr_smoothed.update(self.wr, dt)
+        self.wl_smoothed_func.update(self.wl, dt)
+        self.wr_smoothed_func.update(self.wr, dt)
 
         # Update previous steps
         self.ml_enc_steps = ml_enc_now
