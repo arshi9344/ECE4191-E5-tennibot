@@ -9,8 +9,14 @@ import matplotlib.pyplot as plt
 
 class TennisBallDetector:
     def __init__(self, lower_color=(20, 100, 100), upper_color=(40, 255, 255), min_radius=10, max_radius=50,
-                 min_area=100, line_distance=100):
-        self.camera = cv2.VideoCapture(0)  # Adjust if necessary
+                 min_area=100, line_distance=100, simulate=False):
+        # if Simulate is True, then detector.detect will always return false. This is useful for testing the code without a camera.
+        self.simulate = simulate
+        if simulate:
+            # self.camera = cv2.VideoCapture("tennis_ball_sim.avi")
+            self.camera = None
+        else:
+            self.camera = cv2.VideoCapture(0)  # Adjust if necessary
         self.lower_color = np.array(lower_color)
         self.upper_color = np.array(upper_color)
         self.min_radius = min_radius
@@ -33,12 +39,13 @@ class TennisBallDetector:
         # Create background subtractor
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(detectShadows=True)
 
-        if not self.camera.isOpened():
+        if not simulate and not self.camera.isOpened():
             print("Error: Could not open USB camera.")
 
     def detect(self, retry=True, max_num_retries=10, retry_interval=1):
         counter = 0
-
+        if self.simulate:
+            return False
         while True:
             ret, self.frame = self.camera.read()
             if not ret:

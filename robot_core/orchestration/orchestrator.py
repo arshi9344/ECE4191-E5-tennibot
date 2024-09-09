@@ -6,8 +6,13 @@ import random
 from robot_core.control.PI_controller import PIController
 from robot_core.motion.tentacle_planner import TentaclePlanner
 from robot_core.perception.opencv_detector import TennisBallDetector
-from robot_core.hardware.diff_drive_robot import DiffDriveRobot
+from robot_core.hardware.simulated_diff_drive_robot import DiffDriveRobot
 
+"""
+Orchestrator - coordinates PI motion control, perception, and motion planning. 
+Single-threaded version of Orchestrator. 
+"""
+#TODO: Remove the TentaclePlanner and PIController classes from the orchestrator and pass them as arguments to the start() method. (Depdendency Injection)
 
 class Orchestrator:
     def __init__(self):
@@ -334,8 +339,8 @@ class Orchestrator:
         duty_cycle_l, duty_cycle_r, wl_desired, wr_desired = self.controller.drive(
             linear,
             angular,
-            self.robot.wl_smoothed.value,
-            self.robot.wr_smoothed.value
+            self.robot.wl_smoothed,
+            self.robot.wr_smoothed
         )
         # Log data
         x, y, th = self.robot.pose
@@ -353,7 +358,7 @@ class Orchestrator:
             self,
             robot=DiffDriveRobot(real_time=True),
             controller=PIController(real_time=True),
-            detector=TennisBallDetector(),
+            detector=None,
             planner=TentaclePlanner(max_linear_velocity=0.2, max_angular_velocity=2)
     ):
         if self.robot is None:
