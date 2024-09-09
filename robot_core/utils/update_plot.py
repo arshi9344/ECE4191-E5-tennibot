@@ -6,7 +6,7 @@ import numpy as np
 from IPython import display
 
 
-def update_plot(orchestrator, fig, axes):
+def update_plot(orchestrator, fig, axes, clear_output=True):
     axes_flat = axes.flatten()  # Flatten the 2D array of axes
     for ax in axes_flat:
         ax.clear()
@@ -81,5 +81,6 @@ def update_plot(orchestrator, fig, axes):
 
     fig.tight_layout()
     fig.canvas.draw()
-    #     display.clear_output(wait=True)
+    if clear_output:
+        display.clear_output(wait=True)
     display.display(fig)

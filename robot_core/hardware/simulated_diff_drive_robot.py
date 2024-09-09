@@ -1,13 +1,35 @@
 """
 This is a simulated DiffDrive robot. We can use this to test our higher level code without having to run it on the real robot.
+
+Note that all of the pin assignment arguments are still included in the constructor even though they're not used in this class, just so we can maintain the same constructor signature as the real robot class.
 """
 import numpy as np
 
 from robot_core.hardware.dimensions import WHEEL_RADIUS, WHEEL_SEP
 
 class DiffDriveRobot:
+    def __init__(
+            self,
+            dt=0.1,
+            real_time=None,
+            tau = None,
+            inertia=5,
+            drag=0.2,
+            wheel_radius=WHEEL_RADIUS,
+            wheel_sep=WHEEL_SEP,
+            max_enc_steps=None,
+            ml_pwm=None,
+            mr_pwm=None,
+            ml_in1=None,
+            ml_in2=None,
+            mr_in3=None,
+            mr_in4=None,
+            ml_encA=None,
+            ml_encB=None,
+            mr_encA=None,
+            mr_encB=None
 
-    def __init__(self, inertia=5, dt=0.1, drag=0.2, wheel_radius=WHEEL_RADIUS, wheel_sep=WHEEL_SEP):
+    ):
 
         self.x = 0.0  # y-position
         self.y = 0.0  # y-position
@@ -22,6 +44,14 @@ class DiffDriveRobot:
 
         self.r = wheel_radius
         self.l = wheel_sep
+
+    @property
+    def wl_smoothed(self):
+        return self.wl
+
+    @property
+    def wr_smoothed(self):
+        return self.wr
 
     # Should be replaced by motor encoder measurement which measures how fast wheel is turning
     # Here, we simulate the real system and measurement
@@ -60,6 +90,9 @@ class DiffDriveRobot:
         self.th = self.th + w * self.dt
 
         return self.x, self.y, self.th
+
+    def set_motor_speed(self, left_duty_cycle, right_duty_cycle):
+        pass
 
     @property
     def pose(self):
