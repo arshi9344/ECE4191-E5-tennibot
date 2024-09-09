@@ -18,7 +18,7 @@ objpoints = []  # 3D points in real-world space
 imgpoints = []  # 2D points in image plane
 
 # Load calibration images (update path to your images)
-images = glob.glob('images/*.jpg')
+images = glob.glob('notebooks/scratchspace/camera/images/*.jpg')
 print(f"Found {len(images)} images.")
 for fname in images:
     img = cv.imread(fname)
@@ -36,7 +36,7 @@ for fname in images:
         # Draw and display the corners
         img = cv.drawChessboardCorners(img, CHECKERBOARD, corners2, ret)
         cv.imshow('img', img)
-        cv.waitKey(5000)
+        cv.waitKey(500)
 
 cv.destroyAllWindows()
 

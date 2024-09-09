@@ -2,7 +2,7 @@ import cv2
 import os
 
 # Set the directory where you want to save the captured images
-save_dir = 'images'
+save_dir = 'images2'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 
@@ -15,7 +15,7 @@ if not cap.isOpened():
     exit()
 
 # Image counter
-img_counter = 23
+img_counter = 46
 
 print("Press 'c' to capture an image and 'q' to quit.")
 
