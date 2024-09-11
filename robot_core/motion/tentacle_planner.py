@@ -9,7 +9,7 @@ class TentaclePlanner:
     def __init__(
             self,
             obstacles=[],
-            dt=0.2,
+            dt=0.1,
             steps=15,  # Number of steps the planner uses when simulating a path #CHANGE
             alpha=1,  # Weighs the positional error in the cost function. Higher value prioritises goal positions.
             beta=0.1,
