@@ -1,7 +1,13 @@
 import time
 import numpy as np
-import RPi.GPIO as GPIO
-import gpiozero
+
+try: # Import the GPIO library. If it fails, we assume we are running on a non-Raspberry Pi system.
+    import RPi.GPIO as GPIO
+    import gpiozero
+except ImportError:
+    print("Not running on Raspberry Pi. GPIO library not imported.")
+    pass
+
 
 from robot_core.utils.filters import LowPassFilter
 from robot_core.hardware.pin_config import *

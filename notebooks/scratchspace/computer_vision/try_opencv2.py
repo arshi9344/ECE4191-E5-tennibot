@@ -5,7 +5,7 @@ import numpy as np
 # Load the image
 image = cv2.imread('tennis_ball10.jpg')
 
-# Define a size threshold (e.g., max width or height of 1000 pixels)
+# Define a size threshold (e.g., max x_lim or height of 1000 pixels)
 max_dimension = 1000
 
 # Check if the image is too large
