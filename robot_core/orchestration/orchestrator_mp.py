@@ -4,10 +4,15 @@ import threading
 import numpy as np
 import json
 import random
+from IPython import display
 import multiprocessing as mp
 import logging
 import queue
 import os
+import psutil
+
+from matplotlib import pyplot as plt
+
 from robot_core.control.PI_controller import PIController
 from robot_core.motion.tentacle_planner import TentaclePlanner
 from robot_core.hardware.simulated_diff_drive_robot import DiffDriveRobot
@@ -24,14 +29,16 @@ class Orchestrator(mp.Process):
             shared_data,
             goal_position,
             robot_pose,
+            robot_graph_data,
             log_queue,
             robot=None,
             controller=None,
             planner=None,
-            dt=None
+            dt=None,
+            log=False
     ):
         super().__init__()
-        setup_logging(log_queue)
+        if log: setup_logging(log_queue)
 
         self.logger = logging.getLogger(f'{__name__}.Orchestrator')
         print(f"Logger name: {self.logger.name}")
@@ -42,13 +49,14 @@ class Orchestrator(mp.Process):
         self.shared_data = shared_data # Shared data like robot pose (updated by orchestrator) and also motion state (read by orchestrator)
         self.goal_position = goal_position # Consumed (read) by Orchestrator to adjust robot's pose
         self.robot_pose = robot_pose # Updated by Orchestrator
-
+        self.robot_graph_data = robot_graph_data # Updated by Orchestrator
 
         self.last_update = None
+        self.start_time = None
         # Initialising subcomponents (robot, controller, planner)
         self.logger.info(f"Initialising Orchestrator:")
         self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
-
+        # print(f"Process ID: {os.getpid()} - Running worker: {self.name}")
         if not dt:
             self.dt = 0.1 # Everything runs at 0.1s. The TentaclePlanner and PIController are also run at this interval.
         else:
@@ -72,7 +80,7 @@ class Orchestrator(mp.Process):
 
 
         if not planner:
-            self.planner = TentaclePlanner(max_linear_velocity=0.2, max_angular_velocity=2) # Default
+            self.planner = TentaclePlanner() # Default
         else:
             self.planner = planner
         planner_default = 'default' if planner else 'supplied'
@@ -84,10 +92,10 @@ class Orchestrator(mp.Process):
         self.logger.info(f"        Max angular acceleration: {self.planner.max_angular_acceleration:.2f}")
         self.logger.info(f"        Max angular tolerance: {self.planner.max_angular_tolerance:.2f}")
 
-        print(f"Logger name: {self.logger.name}")
-        print(f"Logger level: {self.logger.level}")
-        print(f"Logger handlers: {self.logger.handlers}")
-        print(f"Logger parent: {self.logger.parent}")
+        # print(f"Logger name: {self.logger.name}")
+        # print(f"Logger level: {self.logger.level}")
+        # print(f"Logger handlers: {self.logger.handlers}")
+        # print(f"Logger parent: {self.logger.parent}")
 
     def get_dt(self):
         now = time.time()
@@ -101,10 +109,11 @@ class Orchestrator(mp.Process):
 
     def run(self):
         try:
+            self.print_process()
+            self.start_time = time.time()
             wl_desired, wr_desired, duty_cycle_l, duty_cycle_r, goal_x, goal_y, goal_th = None, None, None, None, None, None, None
             counter = 0
             while self.shared_data['running']:
-
                 counter += 1
 
                 if self.shared_data['motion_state'].get() == RobotStates.DRIVE:
@@ -126,7 +135,8 @@ class Orchestrator(mp.Process):
                         self.robot.wr_smoothed
                     )
                     # Apply the duty cycles to the robot wheels
-                    self.robot.pose_update(duty_cycle_l, duty_cycle_r)
+                    # self.robot.pose_update(duty_cycle_l, duty_cycle_r)
+                    self.robot.pose_update(90, 90)
 
 
 
@@ -152,9 +162,9 @@ class Orchestrator(mp.Process):
 
                 }
                 # print(data)
-                self.logger.info("Attempting to log data...")
-
                 self.logger.info(json.dumps(data))
+                self.robot_graph_data.append(data)
+                # print(self.robot_graph_data[-1])
                 # print(json.dumps(data))
 
                 # Updating globally shared robot pose
@@ -178,3 +188,116 @@ class Orchestrator(mp.Process):
         except Exception as e:
             self.logger.error(f"Error in Orchestrator, Stopping robot: {e}")
             self.robot.set_motor_speed(0, 0)
+
+    def print_process(self):
+        # Get the current process ID
+        pid = os.getpid()
+        # Get the CPU core this process is running on
+        process = psutil.Process(pid)
+        print(f"Orchestrator Process (PID: {pid}) running with: {process.num_threads()} threads")
+
+    def update_plot(self, fig=None, axes=None, clear_output=False):
+        plt.ion()
+        plt.close(fig)
+
+        if fig is None or axes is None:
+            raise ValueError("Please provide a figure and axes to update the plot, e.g. \nfig, axes = plt.subplots(2, 2, figsize=(12, 10))")
+        if isinstance(self.robot_graph_data, type(None)):
+            return
+        try:
+            if len(self.robot_graph_data) == 0:
+                return
+        except TypeError:
+            print("Inside update_plot, robot graph data is none.")
+            return
+
+        plt.ion()
+        axes_flat = axes.flatten()  # Flatten the 2D array of axes
+        for ax in axes_flat:
+            ax.clear()
+
+        data = self.robot_graph_data
+        # Plot 1: Robot path and orientation
+        poses = np.array([ele['pose'] for ele in data])
+        if len(poses) > 0:
+            axes[0, 0].clear()
+            axes[0, 0].plot(np.array(poses)[:, 0], np.array(poses)[:, 1])
+            x, y, th = poses[-1]
+            axes[0, 0].plot(x, y, 'k', marker='+')
+            axes[0, 0].quiver(x, y, 0.1 * np.cos(th), 0.1 * np.sin(th))
+        axes[0, 0].set_xlabel('x-position (m)')
+        axes[0, 0].set_ylabel('y-position (m)')
+        axes[0, 0].set_title(
+            f"Robot Pose Over Time. Kp: {self.controller.Kp}, Ki: {self.controller.Ki}")
+        axes[0, 0].axis('equal')
+        axes[0, 0].grid()
+
+        # Plot 2: Duty cycle commands
+        duty_cycle_commands = np.array([ele['duty_cycle_commands'] for ele in data])
+        if len(duty_cycle_commands) > 0:
+            axes[0, 1].clear()
+            duty_cycle_commands = np.array(duty_cycle_commands)
+            axes[0, 1].plot(duty_cycle_commands[:, 0], label='Left Wheel')
+            axes[0, 1].plot(duty_cycle_commands[:, 1], label='Right Wheel')
+
+        axes[0, 1].set_xlabel('Time (s)')
+        axes[0, 1].set_ylabel('Duty Cycle')
+        axes[0, 1].set_title('Duty Cycle Commands Over Time')
+        axes[0, 1].legend()
+        axes[0, 1].grid()
+
+        # Plot 3: Wheel velocities
+        velocities = np.array([ele['current_wheel_w'] for ele in data])
+        desired_velocities = np.array([ele['target_wheel_w'] for ele in data])
+        if len(velocities) > 0 and len(desired_velocities) > 0:
+            axes[1, 0].clear()
+            axes[1, 0].plot(velocities[:, 0], label='Left Wheel')
+            axes[1, 0].plot(velocities[:, 1], label='Right Wheel')
+            axes[1, 0].plot(desired_velocities[:, 0], label='Desired Left Wheel')
+            axes[1, 0].plot(desired_velocities[:, 1], label='Desired Right Wheel')
+        axes[1, 0].set_xlabel('Time Step')
+        axes[1, 0].set_ylabel('Wheel Velocity (rad/s)')
+        axes[1, 0].set_title('Wheel Velocity vs. Time')
+        axes[1, 0].legend()
+        axes[1, 0].grid()
+
+        # Plot 4: Goal Positions vs. actual position
+        goal_positions = np.array([ele['goal_position'] for ele in data])
+
+        # Add (0, 0) to both goal_positions and poses
+        goal_positions = np.vstack(((0, 0, 0), goal_positions))
+        poses = np.vstack(([0, 0, 0], poses))
+        # scan_locations = np.array(orchestrator.scan_locations
+
+        axes[1, 1].clear()
+        axes[1, 1].plot(0, 0, 'ko', markersize=10, label='Start (0, 0)')  # Add point at (0, 0)
+
+        if len(poses) > 0:
+            axes[1, 1].plot(poses[:, 0], poses[:, 1], 'b-', label='Actual Path')
+            axes[1, 1].scatter(poses[:, 0], poses[:, 1], color='b', s=5)  # Add dots for each position with custom size
+        if len(goal_positions) > 1:
+            axes[1, 1].plot(goal_positions[:, 0], goal_positions[:, 1], 'r--', label='Goal Path')
+            axes[1, 1].plot(goal_positions[:, 0], goal_positions[:, 1], 'r.')  # Add dots for each goal position
+        # if len(scan_locations) > 1:
+        #     axes[1, 1].scatter(scan_locations[:, 0], scan_locations[:, 1], color='g', s=20,
+        #                        label='Scan Locations')  # Add dots for each scan position
+
+        axes[1, 1].set_xlabel('x-position (m)')
+        axes[1, 1].set_ylabel('y-position (m)')
+        if self.start_time is not None:
+            duration = time.time() - self.start_time
+        else:
+            duration = 0
+        axes[1, 1].set_title(f"Robot Positions. t={duration:.2f} sec")
+        axes[1, 1].axis('equal')
+        axes[1, 1].grid(True)
+        axes[1, 1].legend()
+
+        fig.tight_layout()
+        fig.canvas.draw()
+        plt.pause(0.001)
+
+        if clear_output:
+            display.clear_output(wait=True)
+        plt.show()
+        display.display(fig)

@@ -14,7 +14,7 @@ import time
 
 def setup_logging(queue):
     root = logging.getLogger()
-    root.setLevel(logging.DEBUG)
+    root.setLevel(logging.INFO)
     # Remove all existing handlers to avoid duplicates
     for handler in root.handlers[:]:
         root.removeHandler(handler)
