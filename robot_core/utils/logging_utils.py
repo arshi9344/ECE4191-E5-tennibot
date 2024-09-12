@@ -1,6 +1,6 @@
 import logging
 from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
-
+import time
 # class LogData:
 #     def __init__(self):
 #         self.poses = []
@@ -18,27 +18,17 @@ def setup_logging(queue):
     # Remove all existing handlers to avoid duplicates
     for handler in root.handlers[:]:
         root.removeHandler(handler)
-
     # Add new QueueHandler
-    root.addHandler(QueueHandler(queue))
+    queue_handler = QueueHandler(queue)
+    root.addHandler(queue_handler)
 
-
-def setup_file_logging(log_queue):
-    file_handler = RotatingFileHandler('coordinator.log', maxBytes=20*1024*1024, backupCount=5)
+def create_log_listener(queue):
+    run_time = time.strftime("%d-%m-%Y %H:%M:%S")
+    file_handler = RotatingFileHandler(f'Robot Run {run_time}.log', maxBytes=20*1024*1024, backupCount=5)
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 
-    console_handler = logging.StreamHandler()  # Keep console logging if desired
+    console_handler = logging.StreamHandler()
     console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 
-    listener = QueueListener(log_queue, file_handler, console_handler)
-    listener.daemon = True
-    listener.start()
+    listener = QueueListener(queue, file_handler, console_handler)
     return listener
-
-
-def log_listener(queue):
-    handler = logging.StreamHandler()
-    listener = QueueListener(queue, handler)
-    listener.start()
-    return listener
-
