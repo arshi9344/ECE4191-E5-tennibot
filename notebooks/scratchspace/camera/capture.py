@@ -2,7 +2,7 @@ import cv2
 import os
 
 # Set the directory where you want to save the captured images
-save_dir = 'images_calib2'
+save_dir = 'images_calib3'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 

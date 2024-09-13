@@ -20,11 +20,11 @@ valid_images=[]
 
 
 # Load calibration images (update path to your images)
-images = glob.glob('images_calib2/*.jpg')
+images = glob.glob('images_calib3/*.jpg')
 print(f"Found {len(images)} images.")
 
 
-for fname in images[:50]:
+for fname in images[:60]:
     img = cv.imread(fname)
     if img is None:
         print(f"Image {fname} could not be loaded. Skipping...")
