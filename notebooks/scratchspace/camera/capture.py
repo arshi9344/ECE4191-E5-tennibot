@@ -2,7 +2,7 @@ import cv2
 import os
 
 # Set the directory where you want to save the captured images
-save_dir = 'images_calib3'
+save_dir = 'tennis_ball'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 
@@ -14,8 +14,9 @@ if not cap.isOpened():
     print("Error: Could not open camera.")
     exit()
 
+
 # Image counter
-img_counter = 0
+img_counter = 22
 
 print("Press 'c' to capture an image and 'q' to quit.")
 
