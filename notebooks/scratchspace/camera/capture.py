@@ -1,6 +1,10 @@
 import cv2
 import os
 
+"""
+This file captures images from the camera and saves them to a specified directory.
+"""
+
 # Set the directory where you want to save the captured images
 save_dir = 'tennis_ball'
 if not os.path.exists(save_dir):
