@@ -71,7 +71,7 @@ print("Camera Matrix: \n", camera_matrix)
 print("Distortion Coefficients: \n", dist_coeffs)
 
 # Threshold for acceptable reprojection error (in pixels)
-REPROJ_ERROR_THRESHOLD = 3.5
+REPROJ_ERROR_THRESHOLD = 3.0
 
 # After the camera calibration step, calculate reprojection error and filter bad images
 mean_error = 0
@@ -94,7 +94,7 @@ for i in range(len(objpoints)):
 # Recalculate the reprojection error with only the valid images
 if valid_objpoints and valid_imgpoints:
     mean_error /= len(valid_objpoints)
-    print(len(valid_objpoints), "valid images passed the reprojection error threshold.")
+    print(f"{len(valid_objpoints)} out of {len(images)} passed the reprojection error threshold.")
     print(valid_img_names)
     print(f"Total reprojection error (valid images): {mean_error}")
 else:
