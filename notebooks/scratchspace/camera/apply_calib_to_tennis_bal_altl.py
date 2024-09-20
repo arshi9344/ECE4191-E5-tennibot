@@ -26,7 +26,7 @@ import cv2
 import matplotlib.pyplot as plt
 
 # Constants
-IMAGE_PATH = 'tennis_ball/image_16.jpg'
+IMAGE_PATH = 'tennis_ball/image_22.jpg'
 CALIB_MATRIX = 'camera_calibration-2_3.npz'
 Y_FLIP = True
 X_FLIP = True
@@ -49,7 +49,7 @@ def calculate_pixels_per_mm(fx, image_width, sensor_width_mm):
     return fx / sensor_width_mm
 
 
-def estimate_distance(real_radius_cm, pixel_radius, focal_length_pixels):
+def estimate_distance_with_only_ratio(real_radius_cm, pixel_radius, focal_length_pixels):
     """
     Estimate the distance to the tennis ball.
 
@@ -59,11 +59,17 @@ def estimate_distance(real_radius_cm, pixel_radius, focal_length_pixels):
     :return: Estimated distance to the tennis ball in cm.
     """
     distance_cm = (focal_length_pixels * real_radius_cm) / pixel_radius
+
     return distance_cm
 
+def estimate_distance_with_fx(matrix, r_m, r_px, u):
+    dist = matrix[0, 0] * r_m / r_px
+    horizontal_offset = (u - matrix[0, 2]) * (r_m / r_px)
+    return dist, horizontal_offset
 
 
-def calculate_distance(object_size_px, pixels_per_mm, object_real_size_mm, focal_length_mm):
+
+def distance_with_ratio_and_focal_length(object_size_px, pixels_per_mm, object_real_size_mm, focal_length_mm):
     object_size_mm = object_size_px / pixels_per_mm
     distance_mm = object_real_size_mm * focal_length_mm / object_size_mm
     return distance_mm
@@ -82,6 +88,7 @@ with np.load(CALIB_MATRIX) as calibration_data:
     dist = calibration_data['dist_coeffs']
     rvecs = calibration_data['rvecs']
     tvecs = calibration_data['tvecs']
+
 
 fovx, fovy, focalLength, principalPoint, aspectRatio = cv2.calibrationMatrixValues(mtx, IMAGE_SIZE, 3.6, 2.7)
 # Load the image
@@ -141,15 +148,19 @@ image_width_px = 3264
 sensor_width_mm = image_width_px / calculate_pixels_per_mm(fx, image_width_px, FOCAL_LENGTH_MM)
 pixels_per_mm = calculate_pixels_per_mm(fx, frame.shape[1], sensor_width_mm)
 
-# Calculate distances
+### Calculate distances ###
 for center, diameter in tennis_ball_data:
     # This is estimating distance using focal length. The focal length here is just a placeholder, not a real value
-    distance = calculate_distance(diameter, pixels_per_mm, TENNIS_BALL_DIAMETER_MM, FOCAL_LENGTH_MM)
+    distance = distance_with_ratio_and_focal_length(diameter, pixels_per_mm, TENNIS_BALL_DIAMETER_MM, FOCAL_LENGTH_MM)
     print(f"Tennis ball at {center}: Distance = {distance:.2f} mm")
 
     # Estimating distance using pin hole camera approach
-    distance = estimate_distance(TENNIS_BALL_DIAMETER_MM, diameter, (fx+fy)/2)
+    distance = estimate_distance_with_only_ratio(TENNIS_BALL_DIAMETER_MM, diameter, (fx + fy) / 2)
     print(f"Tennis ball at {center}: Distance = {distance:.2f} mm")
+
+    dist, x_offset = estimate_distance_with_fx(mtx, TENNIS_BALL_DIAMETER_MM/1000, diameter/2, center[0])
+    print(f"Tennis ball at {center}: Distance = {distance:.2f} mm, horizontal_offset{x_offset:.2f} mm")
+
 
 # Display the resulting frame
 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
