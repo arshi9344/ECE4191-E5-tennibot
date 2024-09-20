@@ -182,6 +182,7 @@ original_image_points = np.array([[x, y]], dtype=np.float32)
 centered_image_points = center_image_coordinates(original_image_points, frame.shape)
 
 # Reproject to 3D
+print(frame.shape)
 points_3d = reproject_to_3d(centered_image_points, frame.shape)
 
 # Visualize the results
