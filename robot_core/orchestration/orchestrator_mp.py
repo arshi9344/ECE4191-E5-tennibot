@@ -135,8 +135,8 @@ class Orchestrator(mp.Process):
                         self.robot.wr_smoothed
                     )
                     # Apply the duty cycles to the robot wheels
-                    # self.robot.pose_update(duty_cycle_l, duty_cycle_r)
-                    self.robot.pose_update(90, 90)
+                    self.robot.pose_update(duty_cycle_l, duty_cycle_r)
+                    # self.robot.pose_update(90, 90)
 
 
 
