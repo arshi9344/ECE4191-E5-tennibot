@@ -17,7 +17,7 @@ class TentaclePlanner:
             max_linear_velocity=0.23,  # 0.23 m/s is at about 75% duty cycle.
             max_angular_velocity=2.1,  # 2.1 rad/s is about 78% duty cycle
             max_linear_tolerance=0.1,  # meters
-            max_angular_tolerance=0.1,  # radians, 0.15 rad = 8.6 deg, 0.08 = 4.6 deg
+            max_angular_tolerance=0.05,  # radians, 0.15 rad = 8.6 deg, 0.08 = 4.6 deg
             max_acceleration=0.3,
             max_angular_acceleration=0.5,
             current_linear_velocity=0.0,
@@ -153,6 +153,7 @@ class TentaclePlanner:
         best_turn_rate = best_turn_tentacle[1]
 
         if abs(angle_diff) > self.max_angular_tolerance:
+            # print(f"Turning: {angle_diff:.2f} rad, {best_turn_rate:.2f} rad/s")
             return (0.0, best_turn_rate)
 
         # If aligned, use linear tentacles
@@ -161,9 +162,12 @@ class TentaclePlanner:
                                    key=lambda t: self._roll_out(t[0], 0, goal_x, goal_y, goal_th, x, y, th))
 
         if abs(angle_diff) <= self.max_angular_tolerance:
+            # print(f"Best linear tentacle: {best_linear_tentacle}, Best turn rate: {best_turn_rate}")
             return (best_linear_tentacle[0], 0.0)
 
+        # print(f"Best linear tentacle: {best_linear_tentacle}, Best turn rate: {best_turn_rate}")
         return (best_linear_tentacle[0], best_turn_rate)
+
 
     def _rotate(self, goal_x, goal_y, goal_th, x, y, th):
         # Calculate the shortest angular distance
