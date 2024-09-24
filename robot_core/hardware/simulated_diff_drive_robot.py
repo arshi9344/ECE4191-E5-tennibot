@@ -10,7 +10,7 @@ from robot_core.hardware.dimensions import WHEEL_RADIUS, WHEEL_SEP
 class DiffDriveRobot:
     def __init__(
             self,
-            dt=0.1,
+            dt=0.03,
             real_time=None,
             tau = None,
             inertia=5,

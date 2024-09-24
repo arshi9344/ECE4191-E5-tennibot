@@ -65,7 +65,7 @@ class Orchestrator(mp.Process):
 
         reality = 'real' if robot else 'simulated'
         if not robot:
-            self.robot = DiffDriveRobot(real_time=True)
+            self.robot = DiffDriveRobot(0.03, real_time=True)
         else:
             self.robot = robot
         self.logger.info(f"    Initialised {reality} robot.")
@@ -124,6 +124,7 @@ class Orchestrator(mp.Process):
 
                     # Get the robot's goal position from the shared goal_position dict
                     goal_x, goal_y, goal_th = self.goal_position['x'], self.goal_position['y'], self.goal_position['th']
+                    print(f"Goal Position: {goal_x:.2f}, {goal_y:.2f}, {goal_th:.2f}, Robot Pose: {self.robot.x:.2f}, {self.robot.y:.2f}, {self.robot.th:.2f}")
                     # Calculate control inputs (robot base linear and angular velocities) using the planner
                     inputs = self.planner.get_control_inputs(goal_x, goal_y, goal_th, *self.robot.pose, strategy='tentacles')
                     # Calculate the duty cycles for the left and right wheels using the controller
@@ -131,8 +132,8 @@ class Orchestrator(mp.Process):
                     duty_cycle_l, duty_cycle_r, wl_desired, wr_desired = self.controller.drive(
                         linear_vel,
                         angular_vel,
-                        self.robot.wl_smoothed,
-                        self.robot.wr_smoothed
+                        self.robot.wl,
+                        self.robot.wr
                     )
                     # Apply the duty cycles to the robot wheels
                     self.robot.pose_update(duty_cycle_l, duty_cycle_r)
@@ -176,6 +177,7 @@ class Orchestrator(mp.Process):
 
                 # Sleep for 0.1s before the next iteration
                 time.sleep(self.dt)
+                # time.sleep(1)
 
             # We only reach this point if the shared_data['running'] flag is False
             self.logger.info("Orchestrator stopping, running Flag is false")

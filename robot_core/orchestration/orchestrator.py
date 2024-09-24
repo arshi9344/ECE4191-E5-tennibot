@@ -86,6 +86,7 @@ class Orchestrator:
                 scan_direction = "anticlockwise" if current_direction == UP else "clockwise"
                 scan_line_distance = scan_lines[scan_line_idx]
                 scan_point_distance = scan_points[scan_point_idx]
+                print(f"Scan point X: {scan_line_distance}, Y: {scan_point_distance}, th: {scan_direction}")
 
                 # Move to the next scanning position
                 print(f"Moving to next scanning position: col: {scan_line_idx}, row: {scan_point_idx}")
