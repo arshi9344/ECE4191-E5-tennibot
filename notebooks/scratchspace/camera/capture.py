@@ -6,12 +6,12 @@ This file captures images from the camera and saves them to a specified director
 """
 
 # Set the directory where you want to save the captured images
-save_dir = 'tennis_ball'
+save_dir = 'images/images_calib6'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 
 # Open a connection to the camera (0 is usually the default camera)
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 
 # Check if the camera opened successfully
 if not cap.isOpened():
@@ -20,7 +20,7 @@ if not cap.isOpened():
 
 
 # Image counter
-img_counter = 22
+img_counter = 27
 
 print("Press 'c' to capture an image and 'q' to quit.")
 
