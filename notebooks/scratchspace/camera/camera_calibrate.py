@@ -19,7 +19,7 @@ imgpoints = []  # 2D points in image plane
 valid_images = []
 
 # Load calibration images (update path to your images)
-images = glob.glob('images_calib/*.jpg')
+images = glob.glob('images/images_calib6/*.jpg')
 print(f"Found {len(images)} images.")
 
 for fname in images:
@@ -87,8 +87,7 @@ if valid_objpoints and valid_imgpoints:
     print("Recalibration completed. Saving parameters...")
 
     # Save calibration data
-    np.save('camera_matrix.npy', camera_matrix)
-    np.save('distortion.npy', dist_coeffs)
+    np.savez('camera_calibration.npz', camera_matrix=camera_matrix, dist_coeffs=dist_coeffs, rvecs=rvecs, tvecs=tvecs)
     print("Calibration data saved.")
 
     # Calculate total reprojection error after recalibration
