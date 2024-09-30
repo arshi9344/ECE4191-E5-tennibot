@@ -19,7 +19,7 @@ imgpoints = []  # 2D points in image plane
 valid_images = []
 
 # Load calibration images (update path to your images)
-images = glob.glob('images_calib/*.jpg')
+images = glob.glob('images/images_calib6/*.jpg')
 print(f"Found {len(images)} images.")
 
 for fname in images:
