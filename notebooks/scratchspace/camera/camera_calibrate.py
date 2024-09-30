@@ -2,34 +2,25 @@ import numpy as np
 import cv2 as cv
 import glob
 
-"""
-This file is used to calibrate the camera using a set of images of a checkerboard pattern.
-It saves a calibration matrix to the same folder as this script.
+# Define the dimensions of the checkerboard (number of inner corners per a chessboard row and column)
+CHECKERBOARD = (9, 6)  # Update this to match your checkerboard
+square_size = 0.025  # Update this to the actual square size in meters
 
-NOTE that I've renamed the camera calibration matrices with a number like 2_3 or 2_7 to indicate the reprojection error, e.g. 2_3 for 2.3 and 2_7 for 2.7
-"""
-
-# Define the dimensions of the checkerboard (inner corners)
-CHECKERBOARD = (6, 9)  # Adjust based on your checkerboard
-#square_size = 0.022  # Square size in meters (25mm)
-square_size = 0.0234 
 # Termination criteria for corner refinement
-criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 60, 0.001)
+criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.00001)
 
 # Prepare object points based on the size of the checkerboard squares
 objp = np.zeros((CHECKERBOARD[0] * CHECKERBOARD[1], 3), np.float32)
-objp[:, :2] = np.mgrid[0:CHECKERBOARD[1], 0:CHECKERBOARD[0]].T.reshape(-1, 2) * square_size
+objp[:, :2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1, 2) * square_size
 
 # Arrays to store object points and image points from all images
 objpoints = []  # 3D points in real-world space
 imgpoints = []  # 2D points in image plane
-valid_images=[]
-
+valid_images = []
 
 # Load calibration images (update path to your images)
 images = glob.glob('images_calib/*.jpg')
 print(f"Found {len(images)} images.")
-
 
 for fname in images:
     img = cv.imread(fname)
@@ -59,21 +50,15 @@ cv.destroyAllWindows()
 
 print("Calibrating camera...")
 # Perform camera calibration to get the camera matrix and distortion coefficients
-ret, camera_matrix, dist_coeffs, rvecs, tvecs = cv.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
-print("Camera calibration completed. Saving parameters...  ")
-
-# Save calibration data
-np.savez('camera_calibration.npz', camera_matrix=camera_matrix, dist_coeffs=dist_coeffs, rvecs=rvecs, tvecs=tvecs)
-
-print("Calibration data saved.")
-# Display camera matrix and distortion coefficients
-print("Camera Matrix: \n", camera_matrix)
-print("Distortion Coefficients: \n", dist_coeffs)
+ret, camera_matrix, dist_coeffs, rvecs, tvecs = cv.calibrateCamera(
+    objpoints, imgpoints, gray.shape[::-1], None, None
+)
+print("Camera calibration completed.")
 
 # Threshold for acceptable reprojection error (in pixels)
-REPROJ_ERROR_THRESHOLD = 3.0
+REPROJ_ERROR_THRESHOLD = 1.0  # Adjust this value as needed
 
-# After the camera calibration step, calculate reprojection error and filter bad images
+# Calculate reprojection error and filter bad images
 mean_error = 0
 valid_objpoints = []
 valid_imgpoints = []
@@ -91,11 +76,51 @@ for i in range(len(objpoints)):
     else:
         print(f"Image {valid_images[i]} rejected due to high reprojection error: {error}")
 
-# Recalculate the reprojection error with only the valid images
+# Recalibrate with valid images
 if valid_objpoints and valid_imgpoints:
     mean_error /= len(valid_objpoints)
     print(f"{len(valid_objpoints)} out of {len(images)} passed the reprojection error threshold.")
-    print(valid_img_names)
-    print(f"Total reprojection error (valid images): {mean_error}")
+    print("Recalibrating camera with valid images...")
+    ret, camera_matrix, dist_coeffs, rvecs, tvecs = cv.calibrateCamera(
+        valid_objpoints, valid_imgpoints, gray.shape[::-1], None, None
+    )
+    print("Recalibration completed. Saving parameters...")
+
+    # Save calibration data
+    np.save('camera_matrix.npy', camera_matrix)
+    np.save('distortion.npy', dist_coeffs)
+    print("Calibration data saved.")
+
+    # Calculate total reprojection error after recalibration
+    mean_error = 0
+    for i in range(len(valid_objpoints)):
+        imgpoints2, _ = cv.projectPoints(
+            valid_objpoints[i], rvecs[i], tvecs[i], camera_matrix, dist_coeffs
+        )
+        error = cv.norm(valid_imgpoints[i], imgpoints2, cv.NORM_L2) / len(imgpoints2)
+        mean_error += error
+    mean_error /= len(valid_objpoints)
+    print(f"Total reprojection error after recalibration: {mean_error}")
 else:
     print("No valid images passed the reprojection error threshold.")
+
+
+"""
+    
+# Load an image to undistort
+test_img = cv.imread('path_to_test_image.jpg')
+h, w = test_img.shape[:2]
+new_camera_matrix, roi = cv.getOptimalNewCameraMatrix(
+    camera_matrix, dist_coeffs, (w, h), 1, (w, h)
+)
+
+# Undistort the image
+undistorted_img = cv.undistort(test_img, camera_matrix, dist_coeffs, None, new_camera_matrix)
+
+# Display the original and undistorted images
+cv.imshow('Original Image', test_img)
+cv.imshow('Undistorted Image', undistorted_img)
+cv.waitKey(0)
+cv.destroyAllWindows()
+
+"""
