@@ -74,22 +74,23 @@ class Coordinator:
         )
 
         # VisionRunner
-        self.vision_runner = VisionRunner(
-            shared_data=self.shared_data,
-            log_queue=self.log_queue,
-            log=self.log,
-            camera_idx=1,
-            use_simulated_video=False
-        )
+#         self.vision_runner = VisionRunner(
+#             shared_data=self.shared_data,
+#             log_queue=self.log_queue,
+#             log=self.log,
+#             camera_idx=1,
+#             use_simulated_video=False
+#         )
+        self.vision_runner = None
 
     def start(self):
         self.orchestrator.start()
-        self.vision_runner.start()
+#         self.vision_runner.start()
 
     def stop(self):
         self.shared_data['running'] = False
         self.orchestrator.join()
-        self.vision_runner.join()
+#         self.vision_runner.join()
 
         if self.log: self.log_listener.stop()
 
@@ -134,7 +135,7 @@ class Coordinator:
         if time.time() - self.last_graph_time > self.graph_interval and len(self.robot_graph_data) > 0 and self.live_graphs:
             self.last_graph_time = time.time()
             self.orchestrator.update_plot(self.fig, self.axes[0:4])
-            self.vision_runner.show_image(self.axes[4])
+#             self.vision_runner.show_image(self.axes[4])
 
 
     def print_process(self):

@@ -112,6 +112,7 @@ class Orchestrator(mp.Process):
 
     def run(self):
         try:
+            print("Inside robot run")
             self.print_process()
             self.start_time = time.time()
             wl_desired, wr_desired, duty_cycle_l, duty_cycle_r, goal_x, goal_y, goal_th = None, None, None, None, None, None, None
@@ -120,6 +121,7 @@ class Orchestrator(mp.Process):
 
             # Initialise Robot
             if not self.simulated_robot:
+                    print("not simulated robot, initalising real")
                     reality = 'real'
                     from robot_core.hardware.diff_drive_robot import DiffDriveRobot
                     self.robot = DiffDriveRobot(0.03, real_time=True)
@@ -132,6 +134,7 @@ class Orchestrator(mp.Process):
 
             while self.shared_data['running']:
                 counter += 1
+                print("inside running loop")
 
                 if self.shared_data['robot_state'].get() == RobotStates.DRIVE:
                     self.logger.setLevel(logging.DEBUG)  # or logging.INFO
@@ -159,15 +162,18 @@ class Orchestrator(mp.Process):
 
 
                 elif self.shared_data['robot_state'].get() == RobotStates.STOP:
-                    self.robot.set_motor_speed(0, 0)
+#                     self.robot.set_motor_speed(0, 0)
+                    pass
 
                 elif self.shared_data['robot_state'].get() == RobotStates.COLLECT:
                     # We're now collecting a ball, so insert servo control logic here
-                    self.robot.set_motor_speed(0, 0)
+#                     self.robot.set_motor_speed(0, 0)
+                    pass
 
                 elif self.shared_data['robot_state'].get() == RobotStates.DEPOSIT:
                     # We're now depositing the balls, so insert servo control logic here
-                    self.robot.set_motor_speed(0, 0)
+#                     self.robot.set_motor_speed(0, 0)
+                    pass
 
 
                 # Logging everything
@@ -206,8 +212,8 @@ class Orchestrator(mp.Process):
 
         except Exception as e:
             self.logger.error(f"Error in Orchestrator, Stopping robot: {e}")
-
-        self.robot.set_motor_speed(0, 0)
+        if self.robot is not None:
+            self.robot.set_motor_speed(0, 0)
         return
 
     def get_latest_goal(self, current_goal):
