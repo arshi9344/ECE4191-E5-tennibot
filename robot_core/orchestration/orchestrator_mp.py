@@ -19,6 +19,7 @@ from robot_core.utils.logging_utils import setup_logging
 from robot_core.orchestration.scan_point_utils import ScanPointGenerator
 from robot_core.coordinator.robot_states import RobotStates
 from robot_core.utils.position_data import PositionData
+from robot_core.perception.ultrasonic_sensors import UltrasonicSensor
 """
 
 """
@@ -127,7 +128,7 @@ class Orchestrator(mp.Process):
 
                     """Import ultrasonic sensors in here"""
                     # from robot_core.perception.ultrasonic_sensor import UltrasonicSensor
-                    # self.ultrasonic = UltrasonicSensor()
+                    self.ultrasonic = UltrasonicSensor(num_samples=20)
             else:
                 reality = 'simulated'
                 from robot_core.hardware.simulated_diff_drive_robot import DiffDriveRobot

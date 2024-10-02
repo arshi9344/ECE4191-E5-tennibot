@@ -2,6 +2,7 @@
 
 WHEEL_RADIUS = 0.027 # meters
 WHEEL_SEP = 0.229 # meters
+ULTRA_DIST_BTWN = 11 # MAKE SURE TO TEST AND RE-CALIBRATE IF NECESSARY
 
 # Wheel separation measurement
 """

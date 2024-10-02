@@ -24,6 +24,10 @@ MR_IN3 = 22 # IN3
 MR_IN4 = 10 # IN4
 MR_ENB = 9 # Used for PWM
 
+#Ultrasonic
+TRIGGER = [5,20]  # GPIO 5 for Trigger of Set 1 (right) and 20 for set 2 (left)
+ECHO = [6,26]     # GPIO 6 for Echo of Set 1 (right) and 26 for set 2 (left)
+
 if __name__ == '__main__':
     try:
         import RPi.GPIO as GPIO
