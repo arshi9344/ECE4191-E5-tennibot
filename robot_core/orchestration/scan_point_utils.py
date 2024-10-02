@@ -107,6 +107,6 @@ if __name__ == '__main__':
     flip_y = False
     # Generate scan points and lines
     scan_gen = ScanPointGenerator(width, depth, max_scan_distance, flip_x, flip_y)
-
+    print(scan_gen.points)
     # Plot the points
     scan_gen.plot_scan_points()

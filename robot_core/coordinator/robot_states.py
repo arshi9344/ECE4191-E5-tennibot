@@ -1,10 +1,11 @@
 from enum import Enum, auto
 
 class RobotStates(Enum):
-    DRIVE = 1
-    STOP = 2
-    COLLECT = 3
+    SEARCH = 1
+    COLLECT = 2
+    RETURN = 3
     DEPOSIT = 4
+    STOP = 5
 
 class VisionStates(Enum):
     NONE = 0

@@ -66,6 +66,7 @@ class Orchestrator(mp.Process):
         self.logger.info(f"    Using dt={self.dt}")
 
         self.robot = None
+        self.ultrasonic = None
         # reality = 'real' if robot else 'simulated'
         # if not robot:
         #     self.robot = DiffDriveRobot(0.03, real_time=True)
@@ -112,7 +113,6 @@ class Orchestrator(mp.Process):
 
     def run(self):
         try:
-            print("Inside robot run")
             self.print_process()
             self.start_time = time.time()
             wl_desired, wr_desired, duty_cycle_l, duty_cycle_r, goal_x, goal_y, goal_th = None, None, None, None, None, None, None
@@ -121,10 +121,13 @@ class Orchestrator(mp.Process):
 
             # Initialise Robot
             if not self.simulated_robot:
-                    print("not simulated robot, initalising real")
                     reality = 'real'
                     from robot_core.hardware.diff_drive_robot import DiffDriveRobot
                     self.robot = DiffDriveRobot(0.03, real_time=True)
+
+                    """Import ultrasonic sensors in here"""
+                    # from robot_core.perception.ultrasonic_sensor import UltrasonicSensor
+                    # self.ultrasonic = UltrasonicSensor()
             else:
                 reality = 'simulated'
                 from robot_core.hardware.simulated_diff_drive_robot import DiffDriveRobot
@@ -134,17 +137,13 @@ class Orchestrator(mp.Process):
 
             while self.shared_data['running']:
                 counter += 1
-                print("inside running loop")
-
-                if self.shared_data['robot_state'].get() == RobotStates.DRIVE:
+                if self.shared_data['robot_state'].get() == RobotStates.SEARCH:
                     self.logger.setLevel(logging.DEBUG)  # or logging.INFO
 
                     # print(f"Orchestrator running {counter}. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
                     self.logger.info(f"Orchestrator running {counter}. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
-
-                    # Get the robot's goal position from the shared goal_position dict
+                    # Get the robot's goal position from the shared goal_position queue
                     goal = self.get_latest_goal(goal)
-                    # print(f"Goal Position: {goal_x:.2f}, {goal_y:.2f}, {goal_th:.2f}, Robot Pose: {self.robot.x:.2f}, {self.robot.y:.2f}, {self.robot.th:.2f}")
                     # Calculate control inputs (robot base linear and angular velocities) using the planner
                     inputs = self.planner.get_control_inputs(goal.x, goal.y, goal.th, *self.robot.pose, strategy='tentacles')
                     # Calculate the duty cycles for the left and right wheels using the controller
@@ -204,6 +203,8 @@ class Orchestrator(mp.Process):
 
             # We only reach this point if the shared_data['running'] flag is False
             self.logger.info("Orchestrator stopping, running Flag is false")
+            if self.robot is not None and not self.simulated_robot:
+                self.robot.set_motor_speed(0, 0)
             self.robot.set_motor_speed(0, 0)
             return
 
@@ -212,7 +213,7 @@ class Orchestrator(mp.Process):
 
         except Exception as e:
             self.logger.error(f"Error in Orchestrator, Stopping robot: {e}")
-        if self.robot is not None:
+        if self.robot is not None and not self.simulated_robot:
             self.robot.set_motor_speed(0, 0)
         return
 
