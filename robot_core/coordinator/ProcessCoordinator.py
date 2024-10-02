@@ -13,6 +13,7 @@ from robot_core.coordinator.robot_states import RobotStates, StateWrapper, Visio
 from robot_core.orchestration.orchestrator_mp import Orchestrator
 from robot_core.perception.vision_runner import VisionRunner
 from robot_core.utils.logging_utils import setup_logging, create_log_listener
+from robot_core.utils.position_data import PositionData
 import matplotlib.pyplot as plt
 import os
 import psutil
@@ -25,10 +26,21 @@ class Coordinator:
             'running': self.manager.Value('b', True),
             'robot_state': StateWrapper(self.manager, RobotStates, RobotStates.STOP),
             'vision_state': StateWrapper(self.manager, VisionStates, VisionStates.NONE),
-            'detected_objects': self.manager.list() # not used for now
         }
         self.robot_pose = self.manager.dict({'x': 0, 'y': 0, 'th': 0})
-        self.goal_position = self.manager.dict({'x': 0, 'y': 0, 'th': 0})
+        self.goal_position_q = self.manager.Queue() # This should always only contain one or zero PositionData objects from robot_core.utils.position_data
+        """
+        mini-explainer for the goal_position Queue:
+            - Orchestrator ALWAYS moves towards the one PositionData in goal_position. Orchestrator does not care about anything else.
+                - If there's nothing inside goal_position Queue, then Orchestrator maintains its current heading.
+            - On startup, goal_position will contain a PositionData for a scanning point. Robot will start moving towards this.
+            - If VisionRunner sees a ball, then the Coordinator inserts a PositionData for ball coordinates into goal_position. 
+                - The robot hence starts moving toward the ball.
+                - If VisionRunner refines its estimate of the ball's position, then Coordinator inserts this new coord into the queue.
+                - Once the ball is collected, Coordinator then inserts the next scanning point into goal_position
+
+        """
+        # [[x, y, th], [x, y, th] ]
 
         # Robot graph data
         self.robot_graph_data = self.manager.list([])
@@ -52,11 +64,12 @@ class Coordinator:
         # Orchestrator
         self.orchestrator = Orchestrator(
             shared_data=self.shared_data,
-            goal_position=self.goal_position,
+            goal_position_q=self.goal_position_q,
             robot_pose=self.robot_pose,
             robot_graph_data=self.robot_graph_data,
             log_queue=self.log_queue,
-            robot=DiffDriveRobot(real_time=True) if not simulate else None,
+            simulated_robot=simulate,
+            # robot=DiffDriveRobot(real_time=True) if not simulate else None,
             log=self.log
         )
 
@@ -85,7 +98,7 @@ class Coordinator:
         self.print_process()
         self.start()
 
-        self.goal_position.update({'x': .8, 'y': -.8, 'th': 0})
+        self.goal_position_q.put(PositionData(.8, -.8, 0, False))
 
         try:
             while self.shared_data['running']:

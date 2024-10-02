@@ -70,7 +70,7 @@ class VisionRunner(mp.Process):
                         print("VisionRunner: Image captured")
 
                     self.last_update = time.time()
-                    print(f"Frame: {self.frame}")
+                    # print(f"Frame: {self.frame}")
 
                     # cv2.imshow('camera', self.frame)
 

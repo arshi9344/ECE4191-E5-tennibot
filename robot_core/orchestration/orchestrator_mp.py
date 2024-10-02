@@ -9,15 +9,16 @@ import logging
 import queue
 import os
 import psutil
+from queue import Empty
 
 from matplotlib import pyplot as plt
 
 from robot_core.control.PI_controller import PIController
 from robot_core.motion.tentacle_planner import TentaclePlanner
-from robot_core.hardware.simulated_diff_drive_robot import DiffDriveRobot
 from robot_core.utils.logging_utils import setup_logging
 from robot_core.orchestration.scan_point_utils import ScanPointGenerator
 from robot_core.coordinator.robot_states import RobotStates
+from robot_core.utils.position_data import PositionData
 """
 
 """
@@ -26,10 +27,11 @@ class Orchestrator(mp.Process):
     def __init__(
             self,
             shared_data,
-            goal_position,
+            goal_position_q,
             robot_pose,
             robot_graph_data,
             log_queue,
+            simulated_robot, # boolean
             robot=None,
             controller=None,
             planner=None,
@@ -46,12 +48,13 @@ class Orchestrator(mp.Process):
         print(f"Logger parent: {self.logger.parent}")
 
         self.shared_data = shared_data # Shared data like robot pose (updated by orchestrator) and also motion state (read by orchestrator)
-        self.goal_position = goal_position # Consumed (read) by Orchestrator to adjust robot's pose
+        self.goal_position_q = goal_position_q # Queue, Consumed (read) by Orchestrator to adjust robot's pose
         self.robot_pose = robot_pose # Updated by Orchestrator
         self.robot_graph_data = robot_graph_data # Updated by Orchestrator
 
         self.last_update = None
         self.start_time = None
+        self.simulated_robot : bool = simulated_robot # boolean
         # Initialising subcomponents (robot, controller, planner)
         self.logger.info(f"Initialising Orchestrator:")
         self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
@@ -62,12 +65,13 @@ class Orchestrator(mp.Process):
             self.dt = dt
         self.logger.info(f"    Using dt={self.dt}")
 
-        reality = 'real' if robot else 'simulated'
-        if not robot:
-            self.robot = DiffDriveRobot(0.03, real_time=True)
-        else:
-            self.robot = robot
-        self.logger.info(f"    Initialised {reality} robot.")
+        self.robot = None
+        # reality = 'real' if robot else 'simulated'
+        # if not robot:
+        #     self.robot = DiffDriveRobot(0.03, real_time=True)
+        # else:
+        #     self.robot = robot
+        # self.logger.info(f"    Initialised {reality} robot.")
 
 
         if not controller:
@@ -112,6 +116,20 @@ class Orchestrator(mp.Process):
             self.start_time = time.time()
             wl_desired, wr_desired, duty_cycle_l, duty_cycle_r, goal_x, goal_y, goal_th = None, None, None, None, None, None, None
             counter = 0
+            goal = PositionData(0, 0, 0, False)
+
+            # Initialise Robot
+            if not self.simulated_robot:
+                    reality = 'real'
+                    from robot_core.hardware.diff_drive_robot import DiffDriveRobot
+                    self.robot = DiffDriveRobot(0.03, real_time=True)
+            else:
+                reality = 'simulated'
+                from robot_core.hardware.simulated_diff_drive_robot import DiffDriveRobot
+                self.robot = DiffDriveRobot(0.03, real_time=True)
+
+            print(f"    Initialised {reality} robot.")
+
             while self.shared_data['running']:
                 counter += 1
 
@@ -122,10 +140,10 @@ class Orchestrator(mp.Process):
                     self.logger.info(f"Orchestrator running {counter}. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
 
                     # Get the robot's goal position from the shared goal_position dict
-                    goal_x, goal_y, goal_th = self.goal_position['x'], self.goal_position['y'], self.goal_position['th']
+                    goal = self.get_latest_goal(goal)
                     # print(f"Goal Position: {goal_x:.2f}, {goal_y:.2f}, {goal_th:.2f}, Robot Pose: {self.robot.x:.2f}, {self.robot.y:.2f}, {self.robot.th:.2f}")
                     # Calculate control inputs (robot base linear and angular velocities) using the planner
-                    inputs = self.planner.get_control_inputs(goal_x, goal_y, goal_th, *self.robot.pose, strategy='tentacles')
+                    inputs = self.planner.get_control_inputs(goal.x, goal.y, goal.th, *self.robot.pose, strategy='tentacles')
                     # Calculate the duty cycles for the left and right wheels using the controller
                     linear_vel, angular_vel  = inputs['linear_velocity'], inputs['angular_velocity']
                     duty_cycle_l, duty_cycle_r, wl_desired, wr_desired = self.controller.drive(
@@ -158,7 +176,7 @@ class Orchestrator(mp.Process):
                     'current_wheel_w': (self.robot.wl, self.robot.wr),
                     'target_wheel_w': (wl_desired, wr_desired),
                     'duty_cycle_commands': (duty_cycle_l, duty_cycle_r),
-                    'goal_position': (goal_x, goal_y, goal_th),
+                    'goal_position': (goal.x, goal.y, goal.th),
 
                 }
                 # print(data)
@@ -192,6 +210,13 @@ class Orchestrator(mp.Process):
         self.robot.set_motor_speed(0, 0)
         return
 
+    def get_latest_goal(self, current_goal):
+        try:
+            res = self.goal_position_q.get_nowait()
+        except Empty:
+            # If queue is empty, return the current goal (no change)
+            res = current_goal
+        return res
 
     def print_process(self):
         # Get the current process ID
