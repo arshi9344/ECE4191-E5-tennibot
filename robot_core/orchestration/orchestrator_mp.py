@@ -1,6 +1,5 @@
 
 import time
-import threading
 import numpy as np
 import json
 import random
@@ -116,7 +115,7 @@ class Orchestrator(mp.Process):
             while self.shared_data['running']:
                 counter += 1
 
-                if self.shared_data['motion_state'].get() == RobotStates.DRIVE:
+                if self.shared_data['robot_state'].get() == RobotStates.DRIVE:
                     self.logger.setLevel(logging.DEBUG)  # or logging.INFO
 
                     # print(f"Orchestrator running {counter}. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
@@ -124,7 +123,7 @@ class Orchestrator(mp.Process):
 
                     # Get the robot's goal position from the shared goal_position dict
                     goal_x, goal_y, goal_th = self.goal_position['x'], self.goal_position['y'], self.goal_position['th']
-                    print(f"Goal Position: {goal_x:.2f}, {goal_y:.2f}, {goal_th:.2f}, Robot Pose: {self.robot.x:.2f}, {self.robot.y:.2f}, {self.robot.th:.2f}")
+                    # print(f"Goal Position: {goal_x:.2f}, {goal_y:.2f}, {goal_th:.2f}, Robot Pose: {self.robot.x:.2f}, {self.robot.y:.2f}, {self.robot.th:.2f}")
                     # Calculate control inputs (robot base linear and angular velocities) using the planner
                     inputs = self.planner.get_control_inputs(goal_x, goal_y, goal_th, *self.robot.pose, strategy='tentacles')
                     # Calculate the duty cycles for the left and right wheels using the controller
@@ -141,14 +140,14 @@ class Orchestrator(mp.Process):
 
 
 
-                elif self.shared_data['motion_state'].get() == RobotStates.STOP:
+                elif self.shared_data['robot_state'].get() == RobotStates.STOP:
                     self.robot.set_motor_speed(0, 0)
 
-                elif self.shared_data['motion_state'].get() == RobotStates.COLLECT:
+                elif self.shared_data['robot_state'].get() == RobotStates.COLLECT:
                     # We're now collecting a ball, so insert servo control logic here
                     self.robot.set_motor_speed(0, 0)
 
-                elif self.shared_data['motion_state'].get() == RobotStates.DEPOSIT:
+                elif self.shared_data['robot_state'].get() == RobotStates.DEPOSIT:
                     # We're now depositing the balls, so insert servo control logic here
                     self.robot.set_motor_speed(0, 0)
 
@@ -182,14 +181,17 @@ class Orchestrator(mp.Process):
             # We only reach this point if the shared_data['running'] flag is False
             self.logger.info("Orchestrator stopping, running Flag is false")
             self.robot.set_motor_speed(0, 0)
+            return
 
         except KeyboardInterrupt:
             self.logger.info("Keyboard interrupt. Stopping robot.")
-            self.robot.set_motor_speed(0, 0)
 
         except Exception as e:
             self.logger.error(f"Error in Orchestrator, Stopping robot: {e}")
-            self.robot.set_motor_speed(0, 0)
+
+        self.robot.set_motor_speed(0, 0)
+        return
+
 
     def print_process(self):
         # Get the current process ID
@@ -198,7 +200,8 @@ class Orchestrator(mp.Process):
         process = psutil.Process(pid)
         print(f"Orchestrator Process (PID: {pid}) running with: {process.num_threads()} threads")
 
-    def update_plot(self, fig=None, axes=None, clear_output=False):
+    def update_plot(self, fig, axes, clear_output=False):
+        # assert that fig and azes are a subplot of 2x2
         plt.ion()
         plt.close(fig)
 
@@ -214,54 +217,54 @@ class Orchestrator(mp.Process):
             return
 
         plt.ion()
-        axes_flat = axes.flatten()  # Flatten the 2D array of axes
-        for ax in axes_flat:
+        # axes_flat = axes.flatten()  # Flatten the 2D array of axes
+        for ax in axes:
             ax.clear()
 
         data = self.robot_graph_data
         # Plot 1: Robot path and orientation
         poses = np.array([ele['pose'] for ele in data])
         if len(poses) > 0:
-            axes[0, 0].clear()
-            axes[0, 0].plot(np.array(poses)[:, 0], np.array(poses)[:, 1])
+            axes[0].clear()
+            axes[0].plot(np.array(poses)[:, 0], np.array(poses)[:, 1])
             x, y, th = poses[-1]
-            axes[0, 0].plot(x, y, 'k', marker='+')
-            axes[0, 0].quiver(x, y, 0.1 * np.cos(th), 0.1 * np.sin(th))
-        axes[0, 0].set_xlabel('x-position (m)')
-        axes[0, 0].set_ylabel('y-position (m)')
-        axes[0, 0].set_title(
+            axes[0].plot(x, y, 'k', marker='+')
+            axes[0].quiver(x, y, 0.1 * np.cos(th), 0.1 * np.sin(th))
+        axes[0].set_xlabel('x-position (m)')
+        axes[0].set_ylabel('y-position (m)')
+        axes[0].set_title(
             f"Robot Pose Over Time. Kp: {self.controller.Kp}, Ki: {self.controller.Ki}")
-        axes[0, 0].axis('equal')
-        axes[0, 0].grid()
+        axes[0].axis('equal')
+        axes[0].grid()
 
         # Plot 2: Duty cycle commands
         duty_cycle_commands = np.array([ele['duty_cycle_commands'] for ele in data])
         if len(duty_cycle_commands) > 0:
-            axes[0, 1].clear()
+            axes[1].clear()
             duty_cycle_commands = np.array(duty_cycle_commands)
-            axes[0, 1].plot(duty_cycle_commands[:, 0], label='Left Wheel')
-            axes[0, 1].plot(duty_cycle_commands[:, 1], label='Right Wheel')
+            axes[1].plot(duty_cycle_commands[:, 0], label='Left Wheel')
+            axes[1].plot(duty_cycle_commands[:, 1], label='Right Wheel')
 
-        axes[0, 1].set_xlabel('Time (s)')
-        axes[0, 1].set_ylabel('Duty Cycle')
-        axes[0, 1].set_title('Duty Cycle Commands Over Time')
-        axes[0, 1].legend()
-        axes[0, 1].grid()
+        axes[1].set_xlabel('Time (s)')
+        axes[1].set_ylabel('Duty Cycle')
+        axes[1].set_title('Duty Cycle Commands Over Time')
+        axes[1].legend()
+        axes[1].grid()
 
         # Plot 3: Wheel velocities
         velocities = np.array([ele['current_wheel_w'] for ele in data])
         desired_velocities = np.array([ele['target_wheel_w'] for ele in data])
         if len(velocities) > 0 and len(desired_velocities) > 0:
-            axes[1, 0].clear()
-            axes[1, 0].plot(velocities[:, 0], label='Left Wheel')
-            axes[1, 0].plot(velocities[:, 1], label='Right Wheel')
-            axes[1, 0].plot(desired_velocities[:, 0], label='Desired Left Wheel')
-            axes[1, 0].plot(desired_velocities[:, 1], label='Desired Right Wheel')
-        axes[1, 0].set_xlabel('Time Step')
-        axes[1, 0].set_ylabel('Wheel Velocity (rad/s)')
-        axes[1, 0].set_title('Wheel Velocity vs. Time')
-        axes[1, 0].legend()
-        axes[1, 0].grid()
+            axes[2].clear()
+            axes[2].plot(velocities[:, 0], label='Left Wheel')
+            axes[2].plot(velocities[:, 1], label='Right Wheel')
+            axes[2].plot(desired_velocities[:, 0], label='Desired Left Wheel')
+            axes[2].plot(desired_velocities[:, 1], label='Desired Right Wheel')
+        axes[2].set_xlabel('Time Step')
+        axes[2].set_ylabel('Wheel Velocity (rad/s)')
+        axes[2].set_title('Wheel Velocity vs. Time')
+        axes[2].legend()
+        axes[2].grid()
 
         # Plot 4: Goal Positions vs. actual position
         goal_positions = np.array([ele['goal_position'] for ele in data])
@@ -271,29 +274,29 @@ class Orchestrator(mp.Process):
         poses = np.vstack(([0, 0, 0], poses))
         # scan_locations = np.array(orchestrator.scan_locations
 
-        axes[1, 1].clear()
-        axes[1, 1].plot(0, 0, 'ko', markersize=10, label='Start (0, 0)')  # Add point at (0, 0)
+        axes[3].clear()
+        axes[3].plot(0, 0, 'ko', markersize=10, label='Start (0, 0)')  # Add point at (0, 0)
 
         if len(poses) > 0:
-            axes[1, 1].plot(poses[:, 0], poses[:, 1], 'b-', label='Actual Path')
-            axes[1, 1].scatter(poses[:, 0], poses[:, 1], color='b', s=5)  # Add dots for each position with custom size
+            axes[3].plot(poses[:, 0], poses[:, 1], 'b-', label='Actual Path')
+            axes[3].scatter(poses[:, 0], poses[:, 1], color='b', s=5)  # Add dots for each position with custom size
         if len(goal_positions) > 1:
-            axes[1, 1].plot(goal_positions[:, 0], goal_positions[:, 1], 'r--', label='Goal Path')
-            axes[1, 1].plot(goal_positions[:, 0], goal_positions[:, 1], 'r.')  # Add dots for each goal position
+            axes[3].plot(goal_positions[:, 0], goal_positions[:, 1], 'r--', label='Goal Path')
+            axes[3].plot(goal_positions[:, 0], goal_positions[:, 1], 'r.')  # Add dots for each goal position
         # if len(scan_locations) > 1:
         #     axes[1, 1].scatter(scan_locations[:, 0], scan_locations[:, 1], color='g', s=20,
         #                        label='Scan Locations')  # Add dots for each scan position
 
-        axes[1, 1].set_xlabel('x-position (m)')
-        axes[1, 1].set_ylabel('y-position (m)')
+        axes[3].set_xlabel('x-position (m)')
+        axes[3].set_ylabel('y-position (m)')
         if self.start_time is not None:
             duration = time.time() - self.start_time
         else:
             duration = 0
-        axes[1, 1].set_title(f"Robot Positions. t={duration:.2f} sec")
-        axes[1, 1].axis('equal')
-        axes[1, 1].grid(True)
-        axes[1, 1].legend()
+        axes[3].set_title(f"Robot Positions. t={duration:.2f} sec")
+        axes[3].axis('equal')
+        axes[3].grid(True)
+        axes[3].legend()
 
         fig.tight_layout()
         fig.canvas.draw()
