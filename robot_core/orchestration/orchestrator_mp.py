@@ -188,7 +188,8 @@ class Orchestrator(mp.Process):
                     current_wheel_w=(self.robot.wl, self.robot.wr),
                     target_wheel_w=(wl_desired, wr_desired),
                     duty_cycle_commands=(duty_cycle_l, duty_cycle_r),
-                    goal_position=(goal.x, goal.y, goal.th)
+                    goal_position=(goal.x, goal.y, goal.th),
+                    time=time.time()
                 )
                 # print(data)
                 # self.logger.info(json.dumps(log_point))
@@ -242,111 +243,3 @@ class Orchestrator(mp.Process):
         # Get the CPU core this process is running on
         process = psutil.Process(pid)
         print(f"Orchestrator Process (PID: {pid}) running with: {process.num_threads()} threads")
-
-    def update_plot(self, fig, axes, clear_output=False):
-        # assert that fig and azes are a subplot of 2x2
-        plt.ion()
-        plt.close(fig)
-
-        if fig is None or axes is None:
-            raise ValueError("Please provide a figure and axes to update the plot, e.g. \nfig, axes = plt.subplots(2, 2, figsize=(12, 10))")
-        if isinstance(self.robot_graph_data, type(None)):
-            return
-        try:
-            if len(self.robot_graph_data) == 0:
-                return
-        except TypeError:
-            print("Inside update_plot, robot graph data is none.")
-            return
-
-        plt.ion()
-        # axes_flat = axes.flatten()  # Flatten the 2D array of axes
-        for ax in axes:
-            ax.clear()
-
-        data = self.robot_graph_data
-        # Plot 1: Robot path and orientation
-        poses = np.array([ele.pose for ele in data])
-
-        if len(poses) > 0:
-            axes[0].clear()
-            axes[0].plot(np.array(poses)[:, 0], np.array(poses)[:, 1])
-            x, y, th = poses[-1]
-            axes[0].plot(x, y, 'k', marker='+')
-            axes[0].quiver(x, y, 0.1 * np.cos(th), 0.1 * np.sin(th))
-        axes[0].set_xlabel('x-position (m)')
-        axes[0].set_ylabel('y-position (m)')
-        axes[0].set_title(
-            f"Robot Pose Over Time. Kp: {self.controller.Kp}, Ki: {self.controller.Ki}")
-        axes[0].axis('equal')
-        axes[0].grid()
-
-        # Plot 2: Duty cycle commands
-        duty_cycle_commands = np.array([ele.duty_cycle_commands for ele in data])
-        if len(duty_cycle_commands) > 0:
-            axes[1].clear()
-            duty_cycle_commands = np.array(duty_cycle_commands)
-            axes[1].plot(duty_cycle_commands[:, 0], label='Left Wheel')
-            axes[1].plot(duty_cycle_commands[:, 1], label='Right Wheel')
-
-        axes[1].set_xlabel('Time (s)')
-        axes[1].set_ylabel('Duty Cycle')
-        axes[1].set_title('Duty Cycle Commands Over Time')
-        axes[1].legend()
-        axes[1].grid()
-
-        # Plot 3: Wheel velocities
-        velocities = np.array([ele.current_wheel_w for ele in data])
-        desired_velocities = np.array([ele.target_wheel_w for ele in data])
-        if len(velocities) > 0 and len(desired_velocities) > 0:
-            axes[2].clear()
-            axes[2].plot(velocities[:, 0], label='Left Wheel')
-            axes[2].plot(velocities[:, 1], label='Right Wheel')
-            axes[2].plot(desired_velocities[:, 0], label='Desired Left Wheel')
-            axes[2].plot(desired_velocities[:, 1], label='Desired Right Wheel')
-        axes[2].set_xlabel('Time Step')
-        axes[2].set_ylabel('Wheel Velocity (rad/s)')
-        axes[2].set_title('Wheel Velocity vs. Time')
-        axes[2].legend()
-        axes[2].grid()
-
-        # Plot 4: Goal Positions vs. actual position
-        goal_positions = np.array([ele.goal_position for ele in data])
-
-        # Add (0, 0) to both goal_positions and poses
-        goal_positions = np.vstack(((0, 0, 0), goal_positions))
-        poses = np.vstack(([0, 0, 0], poses))
-        # scan_locations = np.array(orchestrator.scan_locations
-
-        axes[3].clear()
-        axes[3].plot(0, 0, 'ko', markersize=10, label='Start (0, 0)')  # Add point at (0, 0)
-
-        if len(poses) > 0:
-            axes[3].plot(poses[:, 0], poses[:, 1], 'b-', label='Actual Path')
-            axes[3].scatter(poses[:, 0], poses[:, 1], color='b', s=5)  # Add dots for each position with custom size
-        if len(goal_positions) > 1:
-            axes[3].plot(goal_positions[:, 0], goal_positions[:, 1], 'r--', label='Goal Path')
-            axes[3].plot(goal_positions[:, 0], goal_positions[:, 1], 'r.')  # Add dots for each goal position
-        # if len(scan_locations) > 1:
-        #     axes[1, 1].scatter(scan_locations[:, 0], scan_locations[:, 1], color='g', s=20,
-        #                        label='Scan Locations')  # Add dots for each scan position
-
-        axes[3].set_xlabel('x-position (m)')
-        axes[3].set_ylabel('y-position (m)')
-        if self.start_time is not None:
-            duration = time.time() - self.start_time
-        else:
-            duration = 0
-        axes[3].set_title(f"Robot Positions. t={duration:.2f} sec")
-        axes[3].axis('equal')
-        axes[3].grid(True)
-        axes[3].legend()
-
-        fig.tight_layout()
-        fig.canvas.draw()
-        plt.pause(0.001)
-
-        if clear_output:
-            display.clear_output(wait=True)
-        plt.show()
-        display.display(fig)

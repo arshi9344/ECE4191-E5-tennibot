@@ -8,3 +8,4 @@ class RobotLogPoint:
     target_wheel_w: Tuple[float, float]
     duty_cycle_commands: Tuple[float, float]
     goal_position: Tuple[float, float, float]
+    time: float

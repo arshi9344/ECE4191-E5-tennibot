@@ -24,7 +24,7 @@ import numpy as np
 
 
 class Coordinator:
-    def __init__(self, simulate=False, fig=None, axes=None, live_graphs=False, graph_interval=0.5, log=False, court_dimensions = (4.12, 5.48)):
+    def __init__(self, simulate=False, live_graphs=False, graph_interval=0.5, log=False, clear_output=False, court_dimensions = (4.12, 5.48), debug=False):
         self.manager = Manager()
         self.shared_data = {
             'running': self.manager.Value('b', True),
@@ -50,12 +50,12 @@ class Coordinator:
         self.robot_graph_data = self.manager.list([]) # Contains a list of RobotLogPoint objects from robot_core.utils.logging_utils
         self.graph_interval = graph_interval
         self.last_graph_time = 0
-        self.fig = fig
-        self.axes = axes
         self.live_graphs = live_graphs
+        self.clear_output = clear_output
         self.plotter = None
 
         # Other variables
+        self.debug = debug
         self.court_dimensions = court_dimensions
         self.scan_point_generator = ScanPointGenerator(x_lim=4.12, y_lim=5.48, scan_radius=2, flip_x=True, flip_y=False)
         self.scan_points = self.scan_point_generator.points
@@ -95,6 +95,7 @@ class Coordinator:
         self.vision_runner = None
 
     def start(self):
+        self.print_process()
         self.orchestrator.start()
 #         self.vision_runner.start()
 
@@ -108,7 +109,6 @@ class Coordinator:
         if self.log: self.log_listener.stop()
 
     def run(self):
-        self.print_process()
         self.start() # Starting Orchestrator and VisionRunner
 
         self.shared_data['robot_state'].set(RobotStates.SEARCH)
@@ -129,7 +129,7 @@ class Coordinator:
 
                 if self.prev_scan_point != self.curr_scan_point:
                     self.goal_position_q.put(scan_point_goal) # Insert the new scan point into the goal_position queue
-                    print(f"************ New scan point: {scan_point_goal}")
+                    if self.debug: print(f"************ New scan point: {scan_point_goal}")
 
                     if self.prev_scan_point is None: # Means we're at the first scan point
                         self.prev_scan_point = 0
@@ -138,11 +138,11 @@ class Coordinator:
 
 
                 if self._is_goal_reached(*scan_point_goal.coords, self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['th']):
-                    print(f"************ New scan point: Scanning point reached: {scan_point_goal.x}, {scan_point_goal.y}")
+                    if self.debug: print(f"************ New scan point: Scanning point reached: {scan_point_goal.x}, {scan_point_goal.y}")
                     self.curr_scan_point += 1
                     if self.curr_scan_point >= len(self.scan_points):
                         self.curr_scan_point = 0
-                    print(f"Scanning point incremented: {self.curr_scan_point}")
+                    if self.debug: print(f"Scanning point incremented: {self.curr_scan_point}")
 
 
                 # print(self.shared_data['robot_state'])
@@ -161,8 +161,7 @@ class Coordinator:
         finally:
             # print(self.axes)
             # print(self.fig)
-            if self.fig is not None and self.axes is not None:
-                self.orchestrator.update_plot(self.fig, self.axes)
+            if self.live_graphs: self.plot()
             # print(self.robot_graph_data)
             plt.ioff()
             plt.show()
@@ -170,12 +169,10 @@ class Coordinator:
 
     # TODO: Add function to determine if detected ball is beyond boundaries of court
     def plot(self):
-        assert self.axes is not None, "Axes must be provided to plot"
-        assert self.fig is not None, "Figure must be provided to plot"
-
-        if time.time() - self.last_graph_time > self.graph_interval and len(self.robot_graph_data) > 0 and self.live_graphs:
+        assert self.live_graphs is True, "Cannot plot if live_graphs is False"
+        if time.time() - self.last_graph_time > self.graph_interval and len(self.robot_graph_data) > 0:
             self.last_graph_time = time.time()
-            self.orchestrator.update_plot(self.fig, self.axes[0:4])
+            self.plotter.update_plot(self.robot_graph_data, clear_output=self.clear_output)
             # print(f"Length of robot_graph_data: {len(self.robot_graph_data)}")
 #             self.vision_runner.show_image(self.axes[4])
 

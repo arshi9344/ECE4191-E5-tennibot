@@ -6,7 +6,7 @@ from IPython import display
 
 
 class RobotPlotter:
-    def __init__(self, max_points=1000):
+    def __init__(self, max_points=500):
         self.max_points = max_points
         self.start_time = None
         self.last_plotted_index = 0
@@ -50,27 +50,35 @@ class RobotPlotter:
         self.ax1.set_ylabel('y-position (m)')
         self.ax1.set_title('Robot Pose Over Time')
         self.ax1.grid(True)
+        # self.ax1.axis('equal')
+
 
         self.ax2.set_xlabel('Time Step')
         self.ax2.set_ylabel('Duty Cycle')
         self.ax2.set_title('Duty Cycle Commands Over Time')
         self.ax2.legend()
         self.ax2.grid(True)
+        # self.ax2.axis('equal')
+
 
         self.ax3.set_xlabel('Time Step')
         self.ax3.set_ylabel('Wheel Velocity (rad/s)')
         self.ax3.set_title('Wheel Velocity vs. Time')
         self.ax3.legend()
         self.ax3.grid(True)
+        # self.ax3.axis('equal')
+
 
         self.ax4.set_xlabel('x-position (m)')
         self.ax4.set_ylabel('y-position (m)')
         self.ax4.set_title('Robot Positions')
         self.ax4.grid(True)
         self.ax4.legend()
+        # self.ax4.axis('equal')
+
 
     def update_plot(self, robot_graph_data, clear_output=False):
-        if not robot_graph_data or len(robot_graph_data) <= self.last_plotted_index:
+        if not robot_graph_data or robot_graph_data is None or len(robot_graph_data) <= self.last_plotted_index:
             return
 
         new_data = robot_graph_data[self.last_plotted_index:]
@@ -109,7 +117,9 @@ class RobotPlotter:
             self.orientation_quiver.remove()
             self.orientation_quiver = self.ax1.quiver(x, y, 0.1 * np.cos(th), 0.1 * np.sin(th))
 
+
         self.ax1.relim()
+        self.ax1.axis('equal')
         self.ax1.autoscale_view()
 
     def update_duty_cycle_plot(self, new_data):
@@ -150,6 +160,7 @@ class RobotPlotter:
         self.ax3.relim()
         self.ax3.autoscale_view()
 
+
     def update_position_plot(self, new_data):
         if not new_data:
             return
@@ -168,7 +179,8 @@ class RobotPlotter:
         self.goal_path_line.set_data(updated_goal_x, updated_goal_y)
 
         self.ax4.relim()
-        self.ax4.autoscale_view()
+        self.ax4.axis('equal')
+        # self.ax4.autoscale_view()
 
 
 # Usage
