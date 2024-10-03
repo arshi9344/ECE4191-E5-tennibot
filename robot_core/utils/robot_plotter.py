@@ -26,6 +26,7 @@ class RobotPlotter:
         self.running = False
         self.save_figs = save_figs
 
+
     def start(self):
         # start the plotting thread
         self.running = True
@@ -64,6 +65,7 @@ class RobotPlotter:
 
         self.actual_path_line, = self.ax4.plot([], [], 'b-', label='Actual Path')
         self.goal_path_line, = self.ax4.plot([], [], 'r--', label='Goal Path')
+
 
         self.label_plots()
 
@@ -208,9 +210,11 @@ class RobotPlotter:
         self.ax3.relim()
         self.ax3.autoscale_view()
 
-    def update_position_plot(self, new_data, use_time_window=False):
+    def update_position_plot(self, new_data, only_show_recent=True, recent_thresh=1000):
         if not new_data:
             return
+
+        # TODO: Store the times of all the data points that are plotted. We can update these at the same time as the axes so that they're always in sync. Then, we use this information to update the actual and goal path lines with sliding window.
         new_times = np.array([d.time - self.start_time for d in new_data])
         new_poses = np.array([d.pose for d in new_data])
         new_goals = np.array([d.goal_position for d in new_data])
@@ -231,7 +235,12 @@ class RobotPlotter:
             updated_goal_x = np.append(current_goal[0], new_goals[:, 0])
             updated_goal_y = np.append(current_goal[1], new_goals[:, 1])
 
-
+        if only_show_recent:
+            # Apply time window
+            updated_actual_x = updated_actual_x[-recent_thresh:]
+            updated_actual_y = updated_actual_y[-recent_thresh:]
+            updated_goal_x = updated_goal_x[-recent_thresh:]
+            updated_goal_y = updated_goal_y[-recent_thresh:]
         self.actual_path_line.set_data(updated_actual_x, updated_actual_y)
         self.goal_path_line.set_data(updated_goal_x, updated_goal_y)
 
