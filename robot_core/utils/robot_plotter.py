@@ -1,61 +1,92 @@
-# Plots data from Orchestrator_mp and VisionRuner_mp processes
-
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import numpy as np
 import time
 from IPython import display
-from robot_core.utils.logging_utils import RobotLogPoint
+
 
 class RobotPlotter:
     def __init__(self, max_points=1000):
         self.max_points = max_points
-        self.robot_graph_data = None
         self.start_time = None
-        self.controller = None  # Assuming this is set elsewhere
-
-        # New attributes to track plotting state
         self.last_plotted_index = 0
-        self.poses = np.zeros((max_points, 3))
-        self.duty_cycle_commands = np.zeros((max_points, 2))
-        self.velocities = np.zeros((max_points, 2))
-        self.desired_velocities = np.zeros((max_points, 2))
-        self.goal_positions = np.zeros((max_points, 3))
 
-        # Initialize the plot
-        self.fig, self.axes = plt.subplots(2, 2, figsize=(12, 10))
-        self.setup_plots()
+        # Create the figure and subplots
+        self.fig = plt.figure(figsize=(24, 12))
+        gs = gridspec.GridSpec(2, 3, width_ratios=[1, 1, 2])
 
-    def setup_plots(self):
-        # Initialize all subplots here
-        # (Similar to your original setup, but create Line2D objects)
-        self.path_line, = self.axes[0, 0].plot([], [], 'b-')
-        self.orientation_quiver = self.axes[0, 0].quiver([], [], [], [])
-        # ... (initialize other lines for each subplot)
+        self.ax1 = plt.subplot(gs[0, 0])  # Robot pose vs. time
+        self.ax2 = plt.subplot(gs[0, 1])  # Duty cycle vs. time
+        self.ax3 = plt.subplot(gs[1, 0])  # Wheel velocity vs. time
+        self.ax4 = plt.subplot(gs[1, 1])  # Robot positions, goal paths
+        self.ax5 = plt.subplot(gs[:, 2])  # Camera view (spans both rows)
 
-    def update_plot(self, clear_output=False):
-        if self.robot_graph_data is None or len(self.robot_graph_data) == 0:
+        # Initialize plot lines
+        self.path_line, = self.ax1.plot([], [], 'b-')
+        self.orientation_quiver = self.ax1.quiver([], [], [], [])
+
+        self.duty_cycle_lines = [
+            self.ax2.plot([], [], label='Left Wheel')[0],
+            self.ax2.plot([], [], label='Right Wheel')[0]
+        ]
+
+        self.velocity_lines = [
+            self.ax3.plot([], [], label='Left Wheel')[0],
+            self.ax3.plot([], [], label='Right Wheel')[0]
+        ]
+        self.desired_velocity_lines = [
+            self.ax3.plot([], [], '--', label='Desired Left Wheel')[0],
+            self.ax3.plot([], [], '--', label='Desired Right Wheel')[0]
+        ]
+
+        self.actual_path_line, = self.ax4.plot([], [], 'b-', label='Actual Path')
+        self.goal_path_line, = self.ax4.plot([], [], 'r--', label='Goal Path')
+
+        self.label_plots()
+
+    def label_plots(self):
+        # Set up labels, titles, and legends for each subplot
+        self.ax1.set_xlabel('x-position (m)')
+        self.ax1.set_ylabel('y-position (m)')
+        self.ax1.set_title('Robot Pose Over Time')
+        self.ax1.grid(True)
+
+        self.ax2.set_xlabel('Time Step')
+        self.ax2.set_ylabel('Duty Cycle')
+        self.ax2.set_title('Duty Cycle Commands Over Time')
+        self.ax2.legend()
+        self.ax2.grid(True)
+
+        self.ax3.set_xlabel('Time Step')
+        self.ax3.set_ylabel('Wheel Velocity (rad/s)')
+        self.ax3.set_title('Wheel Velocity vs. Time')
+        self.ax3.legend()
+        self.ax3.grid(True)
+
+        self.ax4.set_xlabel('x-position (m)')
+        self.ax4.set_ylabel('y-position (m)')
+        self.ax4.set_title('Robot Positions')
+        self.ax4.grid(True)
+        self.ax4.legend()
+
+    def update_plot(self, robot_graph_data, clear_output=False):
+        if not robot_graph_data or len(robot_graph_data) <= self.last_plotted_index:
             return
 
-        new_data = self.robot_graph_data[self.last_plotted_index:]
-        if not new_data:
-            return
+        new_data = robot_graph_data[self.last_plotted_index:]
 
-        # Update data arrays
-        for i, data_point in enumerate(new_data, start=self.last_plotted_index):
-            idx = i % self.max_points
-            self.poses[idx] = data_point['pose']
-            self.duty_cycle_commands[idx] = data_point['duty_cycle_commands']
-            self.velocities[idx] = data_point['current_wheel_w']
-            self.desired_velocities[idx] = data_point['target_wheel_w']
-            self.goal_positions[idx] = data_point['goal_position']
+        # Update plots with only the new data
+        self.update_path_plot(new_data)
+        self.update_duty_cycle_plot(new_data)
+        self.update_velocity_plot(new_data)
+        self.update_position_plot(new_data)
 
-        # Update plots
-        self.update_path_plot()
-        self.update_duty_cycle_plot()
-        self.update_velocity_plot()
-        self.update_position_plot()
+        self.last_plotted_index = len(robot_graph_data)
 
-        self.last_plotted_index = len(self.robot_graph_data)
+        # Update title with current time
+        if self.start_time is not None:
+            duration = time.time() - self.start_time
+            self.ax4.set_title(f"Robot Positions. t={duration:.2f} sec")
 
         self.fig.canvas.draw()
         plt.pause(0.001)
@@ -64,35 +95,84 @@ class RobotPlotter:
             display.clear_output(wait=True)
         display.display(self.fig)
 
-    def update_path_plot(self):
-        valid_poses = self.poses[~np.all(self.poses == 0, axis=1)]
-        self.path_line.set_data(valid_poses[:, 0], valid_poses[:, 1])
-        if len(valid_poses) > 0:
-            x, y, th = valid_poses[-1]
+    def update_path_plot(self, new_data):
+        if not new_data:
+            return
+        new_poses = np.array([d.pose for d in new_data])
+        current_data = self.path_line.get_data()
+        updated_x = np.append(current_data[0], new_poses[:, 0])
+        updated_y = np.append(current_data[1], new_poses[:, 1])
+        self.path_line.set_data(updated_x, updated_y)
+
+        if len(new_poses) > 0:
+            x, y, th = new_poses[-1]
             self.orientation_quiver.remove()
-            self.orientation_quiver = self.axes[0, 0].quiver(x, y, 0.1 * np.cos(th), 0.1 * np.sin(th))
-        self.axes[0, 0].relim()
-        self.axes[0, 0].autoscale_view()
+            self.orientation_quiver = self.ax1.quiver(x, y, 0.1 * np.cos(th), 0.1 * np.sin(th))
 
-    def update_duty_cycle_plot(self):
-        valid_duty_cycles = self.duty_cycle_commands[~np.all(self.duty_cycle_commands == 0, axis=1)]
-        # Update duty cycle lines
-        # ... (similar to path plot update)
+        self.ax1.relim()
+        self.ax1.autoscale_view()
 
-    def update_velocity_plot(self):
-        valid_velocities = self.velocities[~np.all(self.velocities == 0, axis=1)]
-        valid_desired_velocities = self.desired_velocities[~np.all(self.desired_velocities == 0, axis=1)]
-        # Update velocity lines
-        # ... (similar to path plot update)
+    def update_duty_cycle_plot(self, new_data):
+        if not new_data:
+            return
+        new_duty_cycles = np.array([d.duty_cycle_commands for d in new_data])
+        current_data = self.duty_cycle_lines[0].get_data()
+        updated_x = np.append(current_data[0], range(len(current_data[0]), len(current_data[0]) + len(new_duty_cycles)))
 
-    def update_position_plot(self):
-        valid_poses = self.poses[~np.all(self.poses == 0, axis=1)]
-        valid_goals = self.goal_positions[~np.all(self.goal_positions == 0, axis=1)]
-        # Update position plot
-        # ... (similar to path plot update)
+        for i, line in enumerate(self.duty_cycle_lines):
+            updated_y = np.append(line.get_ydata(), new_duty_cycles[:, i])
+            if len(updated_y) > self.max_points:
+                updated_x = updated_x[-self.max_points:]
+                updated_y = updated_y[-self.max_points:]
+            line.set_data(updated_x, updated_y)
+
+        self.ax2.relim()
+        self.ax2.autoscale_view()
+
+    def update_velocity_plot(self, new_data):
+        if not new_data:
+            return
+        new_velocities = np.array([d.current_wheel_w for d in new_data])
+        new_desired_velocities = np.array([d.target_wheel_w for d in new_data])
+        current_data = self.velocity_lines[0].get_data()
+        updated_x = np.append(current_data[0], range(len(current_data[0]), len(current_data[0]) + len(new_velocities)))
+
+        for i, (v_line, dv_line) in enumerate(zip(self.velocity_lines, self.desired_velocity_lines)):
+            updated_v = np.append(v_line.get_ydata(), new_velocities[:, i])
+            updated_dv = np.append(dv_line.get_ydata(), new_desired_velocities[:, i])
+            if len(updated_v) > self.max_points:
+                updated_x = updated_x[-self.max_points:]
+                updated_v = updated_v[-self.max_points:]
+                updated_dv = updated_dv[-self.max_points:]
+            v_line.set_data(updated_x, updated_v)
+            dv_line.set_data(updated_x, updated_dv)
+
+        self.ax3.relim()
+        self.ax3.autoscale_view()
+
+    def update_position_plot(self, new_data):
+        if not new_data:
+            return
+        new_poses = np.array([d.pose for d in new_data])
+        new_goals = np.array([d.goal_position for d in new_data])
+
+        current_actual = self.actual_path_line.get_data()
+        current_goal = self.goal_path_line.get_data()
+
+        updated_actual_x = np.append(current_actual[0], new_poses[:, 0])
+        updated_actual_y = np.append(current_actual[1], new_poses[:, 1])
+        updated_goal_x = np.append(current_goal[0], new_goals[:, 0])
+        updated_goal_y = np.append(current_goal[1], new_goals[:, 1])
+
+        self.actual_path_line.set_data(updated_actual_x, updated_actual_y)
+        self.goal_path_line.set_data(updated_goal_x, updated_goal_y)
+
+        self.ax4.relim()
+        self.ax4.autoscale_view()
 
 
 # Usage
-plotter = RobotPlotter()
-# ... populate robot_graph_data ...
-plotter.update_plot()
+if __name__ == '__main__':
+    plotter = RobotPlotter()
+    # In your main loop or update function:
+    # plotter.update_plot(robot_graph_data)

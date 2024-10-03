@@ -16,6 +16,7 @@ from robot_core.perception.vision_runner import VisionRunner
 from robot_core.utils.logging_utils import setup_logging, create_log_listener
 from robot_core.utils.robot_log_point import RobotLogPoint
 from robot_core.utils.position_data import PositionData
+from robot_core.utils.robot_plotter import RobotPlotter
 import matplotlib.pyplot as plt
 import os
 import psutil
@@ -52,6 +53,7 @@ class Coordinator:
         self.fig = fig
         self.axes = axes
         self.live_graphs = live_graphs
+        self.plotter = None
 
         # Other variables
         self.court_dimensions = court_dimensions
@@ -95,6 +97,8 @@ class Coordinator:
     def start(self):
         self.orchestrator.start()
 #         self.vision_runner.start()
+
+        if self.live_graphs: self.plotter = RobotPlotter()
 
     def stop(self):
         self.shared_data['running'] = False
