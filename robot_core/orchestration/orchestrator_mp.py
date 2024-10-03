@@ -207,6 +207,7 @@ class Orchestrator(mp.Process):
 
                 # Sleep for 0.1s before the next iteration
                 if not self.simulated_robot: time.sleep(self.dt)
+                else: time.sleep(self.dt/10)
 
             # We only reach this point if the shared_data['running'] flag is False
             self.logger.info("Orchestrator stopping, running Flag is false")
