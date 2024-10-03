@@ -8,5 +8,8 @@ class PositionData:
     th: float
     is_ball: bool
 
+    @property
+    def coords(self):
+        return self.x, self.y, self.th
 
 

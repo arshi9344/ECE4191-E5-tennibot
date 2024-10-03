@@ -16,10 +16,11 @@ from matplotlib import pyplot as plt
 from robot_core.control.PI_controller import PIController
 from robot_core.motion.tentacle_planner import TentaclePlanner
 from robot_core.utils.logging_utils import setup_logging
+from robot_core.utils.robot_log_point import RobotLogPoint
 from robot_core.orchestration.scan_point_utils import ScanPointGenerator
 from robot_core.coordinator.robot_states import RobotStates
 from robot_core.utils.position_data import PositionData
-from robot_core.perception.ultrasonic_sensors import UltrasonicSensor
+# from robot_core.perception.ultrasonic_sensors import UltrasonicSensor # moved import inside the Orchestrator.run() method
 """
 
 """
@@ -127,7 +128,7 @@ class Orchestrator(mp.Process):
                     self.robot = DiffDriveRobot(0.03, real_time=True)
 
                     """Import ultrasonic sensors in here"""
-                    # from robot_core.perception.ultrasonic_sensor import UltrasonicSensor
+                    from robot_core.perception.ultrasonic_sensors import UltrasonicSensor
                     self.ultrasonic = UltrasonicSensor(num_samples=20)
             else:
                 reality = 'simulated'
@@ -145,17 +146,22 @@ class Orchestrator(mp.Process):
                     self.logger.info(f"Orchestrator running {counter}. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
                     # Get the robot's goal position from the shared goal_position queue
                     goal = self.get_latest_goal(goal)
-                    # Calculate control inputs (robot base linear and angular velocities) using the planner
+                    # Calculate control outputs (robot base linear and angular velocities) using the planner
                     inputs = self.planner.get_control_inputs(goal.x, goal.y, goal.th, *self.robot.pose, strategy='tentacles')
                     # Calculate the duty cycles for the left and right wheels using the controller
                     linear_vel, angular_vel  = inputs['linear_velocity'], inputs['angular_velocity']
+                    goal_reached = inputs['goal_reached']
+                    # if goal_reached: print(f"Goal reached! x:{goal.x}, y:{goal.y}, th:{goal.th}")
+
                     duty_cycle_l, duty_cycle_r, wl_desired, wr_desired = self.controller.drive(
                         linear_vel,
                         angular_vel,
                         self.robot.wl,
                         self.robot.wr
                     )
+                    # print(f"\nGoal: {goal.x}, {goal.y}, {goal.th}, Current: {self.robot.x}, {self.robot.y}, {self.robot.th}")
                     # Apply the duty cycles to the robot wheels
+                    # print(f"Duty Cycle: {duty_cycle_l}, {duty_cycle_r}\n\n")
                     self.robot.pose_update(duty_cycle_l, duty_cycle_r)
                     # self.robot.pose_update(90, 90)
 
@@ -177,17 +183,17 @@ class Orchestrator(mp.Process):
 
 
                 # Logging everything
-                data = {
-                    'pose': self.robot.pose,
-                    'current_wheel_w': (self.robot.wl, self.robot.wr),
-                    'target_wheel_w': (wl_desired, wr_desired),
-                    'duty_cycle_commands': (duty_cycle_l, duty_cycle_r),
-                    'goal_position': (goal.x, goal.y, goal.th),
-
-                }
+                log_point = RobotLogPoint(
+                    pose=self.robot.pose,
+                    current_wheel_w=(self.robot.wl, self.robot.wr),
+                    target_wheel_w=(wl_desired, wr_desired),
+                    duty_cycle_commands=(duty_cycle_l, duty_cycle_r),
+                    goal_position=(goal.x, goal.y, goal.th)
+                )
                 # print(data)
-                self.logger.info(json.dumps(data))
-                self.robot_graph_data.append(data)
+                # self.logger.info(json.dumps(log_point))
+                self.robot_graph_data.append(log_point)
+
                 # print(self.robot_graph_data[-1])
                 # print(json.dumps(data))
 
@@ -199,8 +205,7 @@ class Orchestrator(mp.Process):
                 })
 
                 # Sleep for 0.1s before the next iteration
-                time.sleep(self.dt)
-                # time.sleep(1)
+                if not self.simulated_robot: time.sleep(self.dt)
 
             # We only reach this point if the shared_data['running'] flag is False
             self.logger.info("Orchestrator stopping, running Flag is false")
@@ -221,9 +226,14 @@ class Orchestrator(mp.Process):
     def get_latest_goal(self, current_goal):
         try:
             res = self.goal_position_q.get_nowait()
+            # print(f"get_latest_goal: {res}")
         except Empty:
             # If queue is empty, return the current goal (no change)
             res = current_goal
+
+        if current_goal != res:
+            print(f"************ Orchestrator: New goal received! {res}")
+
         return res
 
     def print_process(self):
@@ -256,7 +266,8 @@ class Orchestrator(mp.Process):
 
         data = self.robot_graph_data
         # Plot 1: Robot path and orientation
-        poses = np.array([ele['pose'] for ele in data])
+        poses = np.array([ele.pose for ele in data])
+
         if len(poses) > 0:
             axes[0].clear()
             axes[0].plot(np.array(poses)[:, 0], np.array(poses)[:, 1])
@@ -271,7 +282,7 @@ class Orchestrator(mp.Process):
         axes[0].grid()
 
         # Plot 2: Duty cycle commands
-        duty_cycle_commands = np.array([ele['duty_cycle_commands'] for ele in data])
+        duty_cycle_commands = np.array([ele.duty_cycle_commands for ele in data])
         if len(duty_cycle_commands) > 0:
             axes[1].clear()
             duty_cycle_commands = np.array(duty_cycle_commands)
@@ -285,8 +296,8 @@ class Orchestrator(mp.Process):
         axes[1].grid()
 
         # Plot 3: Wheel velocities
-        velocities = np.array([ele['current_wheel_w'] for ele in data])
-        desired_velocities = np.array([ele['target_wheel_w'] for ele in data])
+        velocities = np.array([ele.current_wheel_w for ele in data])
+        desired_velocities = np.array([ele.target_wheel_w for ele in data])
         if len(velocities) > 0 and len(desired_velocities) > 0:
             axes[2].clear()
             axes[2].plot(velocities[:, 0], label='Left Wheel')
@@ -300,7 +311,7 @@ class Orchestrator(mp.Process):
         axes[2].grid()
 
         # Plot 4: Goal Positions vs. actual position
-        goal_positions = np.array([ele['goal_position'] for ele in data])
+        goal_positions = np.array([ele.goal_position for ele in data])
 
         # Add (0, 0) to both goal_positions and poses
         goal_positions = np.vstack(((0, 0, 0), goal_positions))

@@ -1,6 +1,8 @@
 import RPi.GPIO as GPIO
 import time
 import math
+import os
+import sys
 
 current_dir = os.getcwd()
 cur__ = os.path.abspath(os.path.join(current_dir,"..",".."))

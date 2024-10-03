@@ -14,6 +14,7 @@ from robot_core.orchestration.scan_point_utils import ScanPointGenerator, ScanPo
 from robot_core.orchestration.orchestrator_mp import Orchestrator
 from robot_core.perception.vision_runner import VisionRunner
 from robot_core.utils.logging_utils import setup_logging, create_log_listener
+from robot_core.utils.robot_log_point import RobotLogPoint
 from robot_core.utils.position_data import PositionData
 import matplotlib.pyplot as plt
 import os
@@ -45,7 +46,7 @@ class Coordinator:
         # [[x, y, th], [x, y, th] ]
 
         # Robot graph data
-        self.robot_graph_data = self.manager.list([])
+        self.robot_graph_data = self.manager.list([]) # Contains a list of RobotLogPoint objects from robot_core.utils.logging_utils
         self.graph_interval = graph_interval
         self.last_graph_time = 0
         self.fig = fig
@@ -56,7 +57,8 @@ class Coordinator:
         self.court_dimensions = court_dimensions
         self.scan_point_generator = ScanPointGenerator(x_lim=4.12, y_lim=5.48, scan_radius=2, flip_x=True, flip_y=False)
         self.scan_points = self.scan_point_generator.points
-        self.current_scan_point = 0
+        self.curr_scan_point = 0
+        self.prev_scan_point = None
         # Setting up Logging
         self.log = log
         self.log_queue = self.manager.Queue(-1)
@@ -108,26 +110,35 @@ class Coordinator:
         self.shared_data['robot_state'].set(RobotStates.SEARCH)
         self.shared_data['vision_state'].set(VisionStates.DETECT_BALL)
 
+        # start with curr_scan_point = 0, prev_scan_point = None
         try:
             while self.shared_data['running']:
-
                 """Searching for a ball / moving to scanning point"""
-                goal_x, goal_y = self.scan_points[self.current_scan_point].x, self.scan_points[self.current_scan_point].y
-                goal_th =  self._angle_between_points([self.robot_pose['x'], self.robot_pose['y']], [goal_x, goal_y])
-                self.goal_position_q.put(PositionData(self.scan_points[0].x, self.scan_points[0].y, goal_th, False))
+                scan_point_goal = PositionData(
+                    self.scan_points[self.curr_scan_point].x,
+                    self.scan_points[self.curr_scan_point].y,
+                    self._angle_between_points([self.robot_pose['x'], self.robot_pose['y']],
+                                               [self.scan_points[self.curr_scan_point].x,
+                                                self.scan_points[self.curr_scan_point].y]),
+                    False
+                )
 
-                if self._is_goal_reached(goal_x, goal_y, goal_th, self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['th']):
-                    print(f"Scanning point reached: {goal_x}, {goal_y}")
-                    self.current_scan_point += 1
-                    if self.current_scan_point >= len(self.scan_points):
-                        self.current_scan_point = 0
+                if self.prev_scan_point != self.curr_scan_point:
+                    self.goal_position_q.put(scan_point_goal) # Insert the new scan point into the goal_position queue
+                    print(f"************ New scan point: {scan_point_goal}")
+
+                    if self.prev_scan_point is None: # Means we're at the first scan point
+                        self.prev_scan_point = 0
+                    else:
+                        self.prev_scan_point = self.curr_scan_point
 
 
-
-
-
-
-
+                if self._is_goal_reached(*scan_point_goal.coords, self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['th']):
+                    print(f"************ New scan point: Scanning point reached: {scan_point_goal.x}, {scan_point_goal.y}")
+                    self.curr_scan_point += 1
+                    if self.curr_scan_point >= len(self.scan_points):
+                        self.curr_scan_point = 0
+                    print(f"Scanning point incremented: {self.curr_scan_point}")
 
 
                 # print(self.shared_data['robot_state'])
@@ -161,6 +172,7 @@ class Coordinator:
         if time.time() - self.last_graph_time > self.graph_interval and len(self.robot_graph_data) > 0 and self.live_graphs:
             self.last_graph_time = time.time()
             self.orchestrator.update_plot(self.fig, self.axes[0:4])
+            # print(f"Length of robot_graph_data: {len(self.robot_graph_data)}")
 #             self.vision_runner.show_image(self.axes[4])
 
     def _is_goal_reached(self, goal_x, goal_y, goal_th, x, y, th, max_linear_tolerance=0.1, max_angular_tolerance=0.05):
