@@ -23,8 +23,20 @@ import psutil
 import numpy as np
 
 
+# TODO: Add function to determine if detected ball is beyond boundaries of court
+
 class Coordinator:
-    def __init__(self, simulate=False, live_graphs=False, graph_interval=0.5, log=False, clear_output=False, court_dimensions = (4.12, 5.48), debug=False):
+    def __init__(
+            self,
+            simulate=False,
+            live_graphs=False,
+            graph_interval=1,
+            log=False,
+            clear_output=False,
+            court_dimensions = (4.12, 5.48),
+            debug=False,
+            plot_time_window=5
+    ):
         self.manager = Manager()
         self.shared_data = {
             'running': self.manager.Value('b', True),
@@ -53,6 +65,8 @@ class Coordinator:
         self.live_graphs = live_graphs
         self.clear_output = clear_output
         self.plotter = None
+        if live_graphs: self.plotter = RobotPlotter(max_time_window=plot_time_window)
+
 
         # Other variables
         self.debug = debug
@@ -97,13 +111,14 @@ class Coordinator:
     def start(self):
         self.print_process()
         self.orchestrator.start()
+        if self.live_graphs: self.plotter.start()
 #         self.vision_runner.start()
 
-        if self.live_graphs: self.plotter = RobotPlotter()
 
     def stop(self):
         self.shared_data['running'] = False
         self.orchestrator.join()
+        if self.live_graphs: self.plotter.stop()
 #         self.vision_runner.join()
 
         if self.log: self.log_listener.stop()
@@ -167,9 +182,9 @@ class Coordinator:
             plt.show()
             self.stop()
 
-    # TODO: Add function to determine if detected ball is beyond boundaries of court
     def plot(self):
         assert self.live_graphs is True, "Cannot plot if live_graphs is False"
+        assert self.plotter is not None, "Cannot plot if self.plotter is None"
         if time.time() - self.last_graph_time > self.graph_interval and len(self.robot_graph_data) > 0:
             self.last_graph_time = time.time()
             self.plotter.update_plot(self.robot_graph_data, clear_output=self.clear_output)

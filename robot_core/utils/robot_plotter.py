@@ -3,36 +3,48 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 import time
 from IPython import display
+import threading
+import queue
 
 """
-- The RobotPlotter class is responsible for plotting the robot's pose, duty cycle, wheel velocity, and position data.
+- The RobotPlotter class is responsible for plotting the robot's pose, duty cycle, wheel velocity, and position data. It's instantiated by Coordinator and used to plot data in real-time.
 
 NOTES:
-- Plotting is a blocking operation as it stands. This is because an instance of RobotPlotter is held by Coordinator, and the update_plot method is called in the main loop.
-- This means that plotting can affect the performance of the high-level decision logic, including the robot's ability to respond to new data by setting goals.
-- I was thinking we could get around this by using Python's threading module to run the plotting in a separate thread. This would allow the main loop to continue running without being blocked by the plotting code.
-- Alternately, we could move the plotting code to a separate process using Python's multiprocessing module. This would also allow the main loop to continue running without being blocked by the plotting code.
-- I'm not sure which approach would be better, but I think threading might be simpler to implement. We could try that first and see how it goes.
-
+- Because matplotlib is blocking and also not thread-safe, we need to create a separate thread for plotting so that if we plot lots of data, it doesn't slow down the main thread
+    - this is important because slowing the main thread down in Coordinator can cause the robot to not respond to commands in time, not move as expected, and not react as quickly to new data
+- The RobotPlotter class uses a queue to pass data to the plotting thread, which then allows us to plot data in real-time with minimal impact on the main thread
 """
 
 class RobotPlotter:
-    def __init__(self, max_time_window=10):  # Changed from max_points to max_time_window (in seconds)
-        self.max_time_window = max_time_window # Time window in seconds for duty cycle and wheel velocity plots (otherwise gets crowded).
+    def __init__(self, max_time_window, save_figs=True):
+        self.max_time_window = max_time_window
         self.start_time = None
         self.last_plotted_index = 0
 
-        # Create the figure and subplots
+        self.data_queue = queue.Queue()  # queue for passing data to the plotting thread
+        self.plotting_thread = threading.Thread(target=self.plotting_loop, daemon=True) # Create the plotting thread
+        self.running = False
+        self.save_figs = save_figs
+
+    def start(self):
+        # start the plotting thread
+        self.running = True
+        self.plotting_thread.start()
+        self.data_queue.put(('init_plot', None)) # initialise the plots (will happen in a separate thread)
+
+    def stop(self):
+        self.running = False
+
+    def init_plot(self):
         self.fig = plt.figure(figsize=(24, 12))
         gs = gridspec.GridSpec(2, 3, width_ratios=[1, 1, 2])
 
-        self.ax1 = plt.subplot(gs[0, 0])  # Robot pose vs. time
-        self.ax2 = plt.subplot(gs[0, 1])  # Duty cycle vs. time
-        self.ax3 = plt.subplot(gs[1, 0])  # Wheel velocity vs. time
-        self.ax4 = plt.subplot(gs[1, 1])  # Robot positions, goal paths
-        self.ax5 = plt.subplot(gs[:, 2])  # Camera view (spans both rows)
+        self.ax1 = plt.subplot(gs[0, 0])
+        self.ax2 = plt.subplot(gs[0, 1])
+        self.ax3 = plt.subplot(gs[1, 0])
+        self.ax4 = plt.subplot(gs[1, 1])
+        self.ax5 = plt.subplot(gs[:, 2])
 
-        # Initialize plot lines
         self.path_line, = self.ax1.plot([], [], 'b-')
         self.orientation_quiver = self.ax1.quiver([], [], [], [])
 
@@ -54,8 +66,6 @@ class RobotPlotter:
         self.goal_path_line, = self.ax4.plot([], [], 'r--', label='Goal Path')
 
         self.label_plots()
-
-        self.counter = 0
 
     def label_plots(self):
         self.ax1.set_xlabel('x-position (m)')
@@ -81,7 +91,10 @@ class RobotPlotter:
         self.ax4.grid(True)
         self.ax4.legend()
 
+
     def update_plot(self, robot_graph_data, clear_output=False):
+        if not self.running:
+            raise Exception(f"RobotPlotter is not running: Cannot update_plot(). Must call start() first.")
         if not robot_graph_data or len(robot_graph_data) <= self.last_plotted_index:
             return
 
@@ -90,29 +103,42 @@ class RobotPlotter:
         if self.start_time is None:
             self.start_time = new_data[0].time
 
-        self.update_path_plot(new_data)
-        self.update_duty_cycle_plot(new_data)
-        self.update_velocity_plot(new_data)
-        self.update_position_plot(new_data)
+        # Instead of updating plots directly, send data to the queue
+        self.data_queue.put(('update', (new_data, clear_output)))
 
         self.last_plotted_index = len(robot_graph_data)
 
-        duration = new_data[-1].time - self.start_time
-        self.ax4.set_title(f"Robot Positions. t={duration:.2f} sec")
+    def plotting_loop(self, downsample_rate=2):
+        # A downsample rate of 2 means we only plot every other data point. This can help reduce the computational load from plotting.
 
-        self.fig.canvas.draw()
-        plt.pause(0.001)
+        while True:
+            command, data = self.data_queue.get()
+            if command == 'init_plot':
+                self.init_plot()
+            elif command == 'update':
+                new_data, clear_output = data
 
-        ### debug
-        # if self.counter % 5 == 0:
-        #     print(f"length of new_data: {len(new_data)}")
-        #     print(f"new_data[-1] pose: {new_data[-1].pose}")
-        #     print(f"new_data[-1] duty_cycle_commands: {new_data[-1].duty_cycle_commands}")
-        #     print(f"last_plotted_index: {self.last_plotted_index}")
+                # Downsample the data
+                downsampled_data = new_data[::downsample_rate]
 
-        if clear_output:
-            display.clear_output(wait=True)
-        display.display(self.fig)
+                if downsampled_data:  # Check if there's any data after downsampling
+                    self.update_path_plot(downsampled_data)
+                    self.update_duty_cycle_plot(downsampled_data)
+                    self.update_velocity_plot(downsampled_data)
+                    self.update_position_plot(downsampled_data)
+
+                    duration = new_data[-1].time - self.start_time
+                    self.ax4.set_title(f"Robot Positions. t={duration:.2f} sec")
+
+                    self.fig.canvas.draw()
+                    plt.pause(0.001)
+
+                    if clear_output:
+                        display.clear_output(wait=True)
+                    display.display(self.fig)
+                    if self.save_figs:
+                        self.fig.savefig(f'robot_plot_{int(time.time())}.png')
+            self.data_queue.task_done()
 
     def update_path_plot(self, new_data):
         if not new_data:
@@ -136,7 +162,8 @@ class RobotPlotter:
             return
 
         new_times = np.array([d.time - self.start_time for d in new_data]) # convert time since epoch into time since robot start
-        new_duty_cycles = np.array([d.duty_cycle_commands for d in new_data]) #
+        newest_time = new_times[-1]
+        new_duty_cycles = np.array([d.duty_cycle_commands for d in new_data])
 
         for i, line in enumerate(self.duty_cycle_lines): # Loop through left and right wheels
             current_x, current_y = line.get_data()
@@ -144,27 +171,21 @@ class RobotPlotter:
             updated_y = np.append(current_y, new_duty_cycles[:, i])
 
             # Apply time window
-            mask = updated_x >= (new_times[-1] - self.max_time_window)
+            mask = updated_x >= (newest_time - self.max_time_window)
             line.set_data(updated_x[mask], updated_y[mask])
 
-            ## debug
-            # if self.counter % 5 == 0:
-            #     print(f"new_times: {new_times[-10:]}")
-            #     print(f"updated_y: {updated_y[-10:]}")
-
-        ax_left_limit = 0 if new_times[-1] - self.max_time_window < 0 else new_times[-1] - self.max_time_window
-        # print(f"ax_left_limit {ax_left_limit}")
-        self.ax2.set_xlim(ax_left_limit, new_times[-1])
+        # Bound the plot to the time window
+        ax_left_limit = 0 if newest_time - self.max_time_window < 0 else newest_time - self.max_time_window
+        if ax_left_limit != newest_time: self.ax2.set_xlim(ax_left_limit, newest_time)
         self.ax2.relim()
         self.ax2.autoscale_view()
-        ## debug
-        self.counter += 1
 
 
     def update_velocity_plot(self, new_data):
         if not new_data:
             return
         new_times = np.array([d.time - self.start_time for d in new_data])
+        newest_time = new_times[-1]
         new_velocities = np.array([d.current_wheel_w for d in new_data])
         new_desired_velocities = np.array([d.target_wheel_w for d in new_data])
 
@@ -181,24 +202,35 @@ class RobotPlotter:
             v_line.set_data(updated_x[mask], updated_v[mask])
             dv_line.set_data(updated_x[mask], updated_dv[mask])
 
-        ax_left_limit = 0 if new_times[-1] - self.max_time_window < 0 else new_times[-1] - self.max_time_window
-        self.ax3.set_xlim(ax_left_limit, new_times[-1])
+        # Bound the plot to the time window
+        ax_left_limit = 0 if newest_time - self.max_time_window < 0 else newest_time - self.max_time_window
+        if ax_left_limit != newest_time: self.ax3.set_xlim(ax_left_limit, newest_time)
         self.ax3.relim()
         self.ax3.autoscale_view()
 
-    def update_position_plot(self, new_data):
+    def update_position_plot(self, new_data, use_time_window=False):
         if not new_data:
             return
+        new_times = np.array([d.time - self.start_time for d in new_data])
         new_poses = np.array([d.pose for d in new_data])
         new_goals = np.array([d.goal_position for d in new_data])
 
         current_actual = self.actual_path_line.get_data()
         current_goal = self.goal_path_line.get_data()
 
-        updated_actual_x = np.append(current_actual[0], new_poses[:, 0])
-        updated_actual_y = np.append(current_actual[1], new_poses[:, 1])
-        updated_goal_x = np.append(current_goal[0], new_goals[:, 0])
-        updated_goal_y = np.append(current_goal[1], new_goals[:, 1])
+        # If this is the first update, start with (0, 0)
+        if len(current_actual[0]) == 0:
+            updated_actual_x = np.concatenate(([0], new_poses[:, 0]))
+            updated_actual_y = np.concatenate(([0], new_poses[:, 1]))
+            updated_goal_x = np.concatenate(([0], new_goals[:, 0]))
+            updated_goal_y = np.concatenate(([0], new_goals[:, 1]))
+        else:
+            # If not the first update, just append new data
+            updated_actual_x = np.append(current_actual[0], new_poses[:, 0])
+            updated_actual_y = np.append(current_actual[1], new_poses[:, 1])
+            updated_goal_x = np.append(current_goal[0], new_goals[:, 0])
+            updated_goal_y = np.append(current_goal[1], new_goals[:, 1])
+
 
         self.actual_path_line.set_data(updated_actual_x, updated_actual_y)
         self.goal_path_line.set_data(updated_goal_x, updated_goal_y)
@@ -206,9 +238,9 @@ class RobotPlotter:
         self.ax4.relim()
         self.ax4.autoscale_view()
 
-
-# Usage
+# Usage remains the same
 if __name__ == '__main__':
-    plotter = RobotPlotter(max_time_window=60)  # Show last 60 seconds of data
+    plotter = RobotPlotter(max_time_window=10)
+    plotter.start()
     # In your main loop or update function:
     # plotter.update_plot(robot_graph_data)
