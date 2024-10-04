@@ -37,7 +37,8 @@ class Orchestrator(mp.Process):
             controller=None,
             planner=None,
             dt=None,
-            log=False
+            log=False,
+            debug=False
     ):
         super().__init__()
         if log: setup_logging(log_queue)
@@ -56,6 +57,7 @@ class Orchestrator(mp.Process):
         self.last_update = None
         self.start_time = None
         self.simulated_robot : bool = simulated_robot # boolean
+        self.debug = debug
         # Initialising subcomponents (robot, controller, planner)
         self.logger.info(f"Initialising Orchestrator:")
         self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
@@ -227,9 +229,8 @@ class Orchestrator(mp.Process):
             # If queue is empty, return the current goal (no change)
             res = current_goal
 
-        if current_goal != res:
+        if self.debug and current_goal != res:
             print(f"************ Orchestrator: New goal received! {res}")
-
         return res
 
     def print_process(self):
