@@ -34,7 +34,6 @@ class Orchestrator(mp.Process):
             robot_graph_data,
             log_queue,
             simulated_robot, # boolean
-            robot=None,
             controller=None,
             planner=None,
             dt=None,
@@ -67,14 +66,10 @@ class Orchestrator(mp.Process):
             self.dt = dt
         self.logger.info(f"    Using dt={self.dt}")
 
+        # These are initialised inside run()
         self.robot = None
         self.ultrasonic = None
-        # reality = 'real' if robot else 'simulated'
-        # if not robot:
-        #     self.robot = DiffDriveRobot(0.03, real_time=True)
-        # else:
-        #     self.robot = robot
-        # self.logger.info(f"    Initialised {reality} robot.")
+
 
 
         if not controller:
@@ -121,13 +116,12 @@ class Orchestrator(mp.Process):
             counter = 0
             goal = PositionData(0, 0, 0, False)
 
-            # Initialise Robot
+            # Initialise Robot and Ultrasonic sensors
             if not self.simulated_robot:
                     reality = 'real'
                     from robot_core.hardware.diff_drive_robot import DiffDriveRobot
                     self.robot = DiffDriveRobot(0.03, real_time=True)
 
-                    """Import ultrasonic sensors in here"""
                     from robot_core.perception.ultrasonic_sensors import UltrasonicSensor
                     self.ultrasonic = UltrasonicSensor(num_samples=20)
             else:

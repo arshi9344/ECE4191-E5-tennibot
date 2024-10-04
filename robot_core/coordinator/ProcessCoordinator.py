@@ -45,6 +45,7 @@ class Coordinator:
         }
         self.robot_pose = self.manager.dict({'x': 0, 'y': 0, 'th': 0})
         self.goal_position_q = self.manager.Queue() # This should always only contain one or zero PositionData objects from robot_core.utils.position_data
+
         """
         mini-explainer for the goal_position Queue:
             - Orchestrator ALWAYS moves towards the one PositionData in goal_position. Orchestrator does not care about anything else.
@@ -59,7 +60,8 @@ class Coordinator:
         # [[x, y, th], [x, y, th] ]
 
         # Robot graph data
-        self.robot_graph_data = self.manager.list([]) # Contains a list of RobotLogPoint objects from robot_core.utils.logging_utils
+        # robot_graph_data may ONLY be written to by Orchestrator and read by everything else.
+        self.robot_graph_data = self.manager.list([]) # Contains a list of RobotLogPoint objects from robot_core.utils.logging_utils.
         self.graph_interval = graph_interval
         self.last_graph_time = 0
         self.live_graphs = live_graphs
@@ -67,6 +69,8 @@ class Coordinator:
         self.plotter = None
         if live_graphs: self.plotter = RobotPlotter(max_time_window=plot_time_window)
 
+        # Shared image data. may ONLY be written to by VisionRunner and read by everything else. This is only necessary for plotting.
+        self.latest_image = self.manager.dict({'time': None, 'frame': None})
 
         # Other variables
         self.debug = debug
@@ -99,28 +103,29 @@ class Coordinator:
         )
 
         # VisionRunner
-#         self.vision_runner = VisionRunner(
-#             shared_data=self.shared_data,
-#             log_queue=self.log_queue,
-#             log=self.log,
-#             camera_idx=1,
-#             use_simulated_video=False
-#         )
-        self.vision_runner = None
+        self.vision_runner = VisionRunner(
+            shared_data=self.shared_data,
+            shared_image=self.latest_image,
+            log_queue=self.log_queue,
+            log=self.log,
+            camera_idx=1,
+            use_simulated_video=False
+        )
 
     def start(self):
         self.print_process()
         self.orchestrator.start()
+        self.vision_runner.start()
+
         if self.live_graphs: self.plotter.start()
-#         self.vision_runner.start()
 
 
     def stop(self):
         self.shared_data['running'] = False
         self.orchestrator.join()
-        if self.live_graphs: self.plotter.stop()
-#         self.vision_runner.join()
+        self.vision_runner.join()
 
+        if self.live_graphs: self.plotter.stop()
         if self.log: self.log_listener.stop()
 
     def run(self):
@@ -187,9 +192,10 @@ class Coordinator:
         assert self.plotter is not None, "Cannot plot if self.plotter is None"
         if time.time() - self.last_graph_time > self.graph_interval and len(self.robot_graph_data) > 0:
             self.last_graph_time = time.time()
-            self.plotter.update_plot(self.robot_graph_data, clear_output=self.clear_output)
+            self.plotter.update_plot(self.robot_graph_data, self.latest_image, clear_output=self.clear_output)
+            #TODO: Add vision data into update_plot - make robotPlotter also accept vision data
+
             # print(f"Length of robot_graph_data: {len(self.robot_graph_data)}")
-#             self.vision_runner.show_image(self.axes[4])
 
     def _is_goal_reached(self, goal_x, goal_y, goal_th, x, y, th, max_linear_tolerance=0.1, max_angular_tolerance=0.05):
         distance_to_goal = np.hypot(goal_x - x, goal_y - y)
