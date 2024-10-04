@@ -74,7 +74,7 @@ class RobotPlotter:
         self.label_plots()
 
     def label_plots(self):
-        efficient_explainer = " (PLOT DISABLED, efficiency_mode=True )" if self.efficient_mode else ""
+        efficient_explainer = " (PLOT DISABLED, efficiency_mode=True)" if self.efficient_mode else ""
         self.ax1.set_xlabel('x-position (m)')
         self.ax1.set_ylabel('y-position (m)')
         self.ax1.set_title('Robot Pose Over Time')
