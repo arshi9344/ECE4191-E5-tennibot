@@ -6,7 +6,7 @@ This file captures images from the camera and saves them to a specified director
 """
 
 # Set the directory where you want to save the captured images
-save_dir = 'images/images_calib6'
+save_dir = 'images5'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 
@@ -20,7 +20,7 @@ if not cap.isOpened():
 
 
 # Image counter
-img_counter = 27
+img_counter = 5
 
 print("Press 'c' to capture an image and 'q' to quit.")
 
