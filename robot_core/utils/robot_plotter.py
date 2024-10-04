@@ -236,10 +236,10 @@ class RobotPlotter:
         if not new_data:
             return
 
-        # TODO: Store the times of all the data points that are plotted. We can update these at the same time as the axes so that they're always in sync. Then, we use this information to update the actual and goal path lines with sliding window.
-        new_times = np.array([d.time - self.start_time for d in new_data])
         new_poses = np.array([d.pose for d in new_data])
-        new_goals = np.array([d.goal_position for d in new_data])
+        new_goals = np.array([(d.goal_position.x, d.goal_position.y, d.goal_position.type) for d in new_data])
+        new_goal_x, new_goal_y, new_goal_types = new_goals.T
+        #TODO: Colour goal points based on type - add legend. Types are defined in robot_core.utils.position PositionTypes class
 
         current_actual = self.actual_path_line.get_data()
         current_goal = self.goal_path_line.get_data()
@@ -248,14 +248,15 @@ class RobotPlotter:
         if len(current_actual[0]) == 0:
             updated_actual_x = np.concatenate(([0], new_poses[:, 0]))
             updated_actual_y = np.concatenate(([0], new_poses[:, 1]))
-            updated_goal_x = np.concatenate(([0], new_goals[:, 0]))
-            updated_goal_y = np.concatenate(([0], new_goals[:, 1]))
+
+            updated_goal_x = np.concatenate(([0], new_goal_x))
+            updated_goal_y = np.concatenate(([0], new_goal_y))
         else:
             # If not the first update, just append new data
             updated_actual_x = np.append(current_actual[0], new_poses[:, 0])
             updated_actual_y = np.append(current_actual[1], new_poses[:, 1])
-            updated_goal_x = np.append(current_goal[0], new_goals[:, 0])
-            updated_goal_y = np.append(current_goal[1], new_goals[:, 1])
+            updated_goal_x = np.append(current_goal[0], new_goal_x)
+            updated_goal_y = np.append(current_goal[1], new_goal_y)
 
         if only_show_recent:
             # Apply time window

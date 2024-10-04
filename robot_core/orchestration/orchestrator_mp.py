@@ -19,7 +19,7 @@ from robot_core.utils.logging_utils import setup_logging
 from robot_core.utils.robot_log_point import RobotLogPoint
 from robot_core.orchestration.scan_point_utils import ScanPointGenerator
 from robot_core.coordinator.robot_states import RobotStates
-from robot_core.utils.position_data import PositionData
+from robot_core.utils.position import Position, PositionTypes
 # from robot_core.perception.ultrasonic_sensors import UltrasonicSensor # moved import inside the Orchestrator.run() method
 """
 
@@ -116,7 +116,7 @@ class Orchestrator(mp.Process):
             self.start_time = time.time()
             wl_desired, wr_desired, duty_cycle_l, duty_cycle_r, goal_x, goal_y, goal_th = None, None, None, None, None, None, None
             counter = 0
-            goal = PositionData(0, 0, 0, False)
+            goal = Position(0, 0, 0, PositionTypes.ROBOT)
 
             # Initialise Robot and Ultrasonic sensors
             if not self.simulated_robot:
@@ -184,7 +184,7 @@ class Orchestrator(mp.Process):
                     current_wheel_w=(self.robot.wl, self.robot.wr),
                     target_wheel_w=(wl_desired, wr_desired),
                     duty_cycle_commands=(duty_cycle_l, duty_cycle_r),
-                    goal_position=(goal.x, goal.y, goal.th),
+                    goal_position=goal,
                     time=time.time()
                 )
                 # print(data)

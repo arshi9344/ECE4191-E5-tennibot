@@ -15,7 +15,7 @@ from robot_core.orchestration.orchestrator_mp import Orchestrator
 from robot_core.perception.vision_runner import VisionRunner
 from robot_core.utils.logging_utils import setup_logging, create_log_listener
 from robot_core.utils.robot_log_point import RobotLogPoint
-from robot_core.utils.position_data import PositionData
+from robot_core.utils.position import Position, PositionTypes
 from robot_core.utils.robot_plotter import RobotPlotter
 import matplotlib.pyplot as plt
 import os
@@ -44,14 +44,14 @@ class Coordinator:
             'vision_state': StateWrapper(self.manager, VisionStates, VisionStates.NONE),
         }
         self.robot_pose = self.manager.dict({'x': 0, 'y': 0, 'th': 0})
-        self.goal_position_q = self.manager.Queue() # This should always only contain one or zero PositionData objects from robot_core.utils.position_data
+        self.goal_position_q = self.manager.Queue() # This should always only contain one or zero Position objects from robot_core.utils.position
 
         """
         mini-explainer for the goal_position Queue:
-            - Orchestrator ALWAYS moves towards the one PositionData in goal_position. Orchestrator does not care about anything else.
+            - Orchestrator ALWAYS moves towards the one Position in goal_position. Orchestrator does not care about anything else.
                 - If there's nothing inside goal_position Queue, then Orchestrator maintains its current heading.
-            - On startup, goal_position will contain a PositionData for a scanning point. Robot will start moving towards this.
-            - If VisionRunner sees a ball, then the Coordinator inserts a PositionData for ball coordinates into goal_position. 
+            - On startup, goal_position will contain a Position for a scanning point. Robot will start moving towards this.
+            - If VisionRunner sees a ball, then the Coordinator inserts a Position for ball coordinates into goal_position. 
                 - The robot hence starts moving toward the ball.
                 - If VisionRunner refines its estimate of the ball's position, then Coordinator inserts this new coord into the queue.
                 - Once the ball is collected, Coordinator then inserts the next scanning point into goal_position
@@ -138,13 +138,13 @@ class Coordinator:
         try:
             while self.shared_data['running']:
                 """Searching for a ball / moving to scanning point"""
-                scan_point_goal = PositionData(
+                scan_point_goal = Position(
                     self.scan_points[self.curr_scan_point].x,
                     self.scan_points[self.curr_scan_point].y,
                     self._angle_between_points([self.robot_pose['x'], self.robot_pose['y']],
                                                [self.scan_points[self.curr_scan_point].x,
                                                 self.scan_points[self.curr_scan_point].y]),
-                    False
+                    PositionTypes.SCAN_POINT
                 )
 
                 if self.prev_scan_point != self.curr_scan_point:
