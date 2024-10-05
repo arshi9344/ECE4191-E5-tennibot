@@ -9,9 +9,9 @@ class PositionTypes(Enum):
 
 @dataclass
 class Position:
-    x: float
-    y: float
-    th: float
+    x: float or None
+    y: float or None
+    th: float or None
     type: PositionTypes
 
     @property
