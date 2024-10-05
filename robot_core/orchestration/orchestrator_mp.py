@@ -10,6 +10,8 @@ import queue
 import os
 import psutil
 from queue import Empty
+import traceback
+
 
 from matplotlib import pyplot as plt
 
@@ -173,6 +175,7 @@ class Orchestrator(mp.Process):
                 if self.shared_data['robot_state'].get() == RobotStates.SEARCH:
                     # Get the robot's goal position from the shared goal_position queue
                     goal = self.get_latest_goal(goal)
+
                     res = self.movement(goal.x, goal.y, goal.th)
 
                     self.log_data(
@@ -276,7 +279,7 @@ class Orchestrator(mp.Process):
             self.logger.info("Keyboard interrupt. Stopping robot.")
 
         except Exception as e:
-            self.logger.error(f"Error in Orchestrator, Stopping robot: {e}")
+            self.logger.error(f"Error in Orchestrator, Stopping robot: {traceback.print_exc()}")
         if self.robot is not None and not self.simulated_robot:
             self.robot.set_motor_speed(0, 0)
         return

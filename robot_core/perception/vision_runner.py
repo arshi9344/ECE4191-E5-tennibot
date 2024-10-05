@@ -6,19 +6,22 @@ import json
 import random
 from IPython import display
 import multiprocessing as mp
+import traceback
+
 
 import logging
 import queue
 import os
 import psutil
 import cv2
-
+from pathlib import Path
 
 from matplotlib import pyplot as plt
 
 from robot_core.utils.logging_utils import setup_logging
 from robot_core.coordinator.robot_states import RobotStates, VisionStates, StateWrapper
-
+from robot_core.utils.position import Position, PositionTypes
+from robot_core.perception.vision_model.tennis_YOLO import TennisBallDetectorHeight
 
 class VisionRunner(mp.Process):
     def __init__(
@@ -51,7 +54,35 @@ class VisionRunner(mp.Process):
 
         self.simulate = use_simulated_video
 
+        self.tennis_ball_detector = None
 
+        # Load the YOLO model and calibration data
+        # current_dir = Path(__file__).parent # Get the directory of the current script
+        # Construct the path to the .npz file
+        # npz_file_path = current_dir / 'vision_model/calib6_matrix.npz'
+        # model_path = current_dir / 'vision_model/best.pt'
+        # custom_cache_dir = current_dir / 'vision_model/cache'
+        # # Set the custom cache directory
+        # os.environ['TORCH_HOME'] = custom_cache_dir
+
+        # Now you can load the .npz file
+        # calibration_data = np.load(npz_file_path)
+        # camera_matrix = calibration_data['camera_matrix']
+        # distortion_coeffs = calibration_data['dist_coeffs']
+        collection_zone = (200, 150, 400, 350)  # Define a region for collection, x_min, y_min, x_max, y_max
+        camera_height = 0.02  # Camera height in meters (2 cm)
+
+        # Initialize the TennisBallDetector with camera height
+        try:
+            self.tennis_ball_detector = TennisBallDetectorHeight(
+                collection_zone=collection_zone,
+                camera_height=camera_height,
+                cache=True,  # Use the cache for the YOLO model if it exists
+                windows=False,  # Path handling for Windows
+                verbose=True  # Enable verbose logging for debugging
+            )
+        except Exception:
+            print(f"Error loading TennisBallDetector: {traceback.print_exc()}")
 
     def run(self):
         if not self.simulate:
@@ -70,29 +101,30 @@ class VisionRunner(mp.Process):
                             # print("VisionRunner: Image captured")
                             pass
 
-                        frame_rgb = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
+                        """
+                        For now, we will just update the shared image with the raw frame for debugging purposes so we can 
+                        figure out what's going on with the TennisBallDetector and why Torch is having that 'module not found' error.
+                        """
+                        # detection = self.tennis_ball_detector.detect(self.frame)
+
+                        # self.last_update = time.time()
+                        # self.shared_image.update({
+                        #     'time': self.last_update,
+                        #     'frame': detection["annotated_frame"]
+                        # })
+                        #
+                        # x, y = detection["cartesian_coords"]
+                        # self.goal_position.update({
+                        #     'goal': Position(x, y, 0, PositionTypes.BALL),
+                        #     'time': time.time()
+                        # })
 
                         self.last_update = time.time()
+                        frame_rgb = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
                         self.shared_image.update({
                             'time': self.last_update,
                             'frame': frame_rgb
                         })
-                        # print(f"Frame: {self.frame}")
-
-                        # cv2.imshow('camera', self.frame)
-
-
-
-                        # Now, dependent on what we're checking for (either box or ball), we can add the appropriate logic here
-                        """
-                        get the x and y of the ball
-                    
-                        """
-                        self.ball_position.update({
-                            'x': 1,
-                            'y': 2
-                        })
-                        # Add scanning here, dependent on self.shared_data['robot_state']
 
                         time.sleep(self.scanning_interval) # The only problem with this approach is that we always need to wait for the interval to pass, we can't immediately request an image
 
@@ -113,15 +145,6 @@ class VisionRunner(mp.Process):
         self.camera.release()
         cv2.destroyAllWindows()
 
-    def show_image(self, axis):
-        print(self.frame)
-
-        if self.frame is not None:
-            print('Showing image')
-            axis.imshow(self.frame)
-            plt.show()
-        else:
-            print('No image to show')
 
     def open_camera(self):
         camera_idxs = [self.camera_idx, self.camera_idx + 1, self.camera_idx + 2, self.camera_idx - 1]
@@ -150,24 +173,39 @@ if __name__ == '__main__':
     shared_data = {
         'running': True,
         'vision_state': StateWrapper(manager, VisionStates, VisionStates.DETECT_BALL),
-        'robot_state': StateWrapper(manager, RobotStates, RobotStates.STOP)
+        'robot_state': StateWrapper(manager, RobotStates, RobotStates.SEARCH)
     }
-    fig, ax = plt.subplots()
+    goal_position = manager.dict({
+        'goal': Position(None, None, None, PositionTypes.BALL),
+        'time': None
+    })
 
     log_queue = mp.Queue()
     camera_idx = 1
-    vision_runner = VisionRunner(shared_data, log_queue, camera_idx, log=True)
+    shared_image = manager.dict({'time': None, 'frame': None})
+
+    vision_runner = VisionRunner(
+        shared_data=shared_data,
+        shared_image=shared_image,
+        goal_position=goal_position,
+        log_queue=log_queue,
+        camera_idx=0,
+        log=False
+    )
     try:
         vision_runner.start()
+        time.sleep(3)
         while True:
-            vision_runner.show_image(ax)
+            plt.imshow(shared_image['frame'])
+            plt.show()
             time.sleep(1)
+
 
 
     except KeyboardInterrupt:
         print("Keyboard Interrupt")
     except Exception as e:
-        print(f"Error in main {e}")
+        print(f"Error in main {traceback.print_exc()}")
 
     vision_runner.join()
     print("VisionRunner process joined")

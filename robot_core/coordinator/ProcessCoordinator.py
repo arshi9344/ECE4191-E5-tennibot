@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 import os
 import psutil
 import numpy as np
+import sys
 
 
 # TODO: Add function to determine if detected ball is beyond boundaries of court
@@ -47,7 +48,7 @@ class Coordinator:
         }
         self.robot_pose = self.manager.dict({'x': 0, 'y': 0, 'th': 0})
         self.goal_position = self.manager.dict({
-            'goal': None, # Goal should be a Position object from robot_core.utils.position
+            'goal': Position(0,0,0,PositionTypes.ROBOT), # Goal should be a Position object from robot_core.utils.position
             'time': None  # The time that the goal is set
         })
 
@@ -144,31 +145,6 @@ class Coordinator:
         try:
             while self.shared_data['running']:
                 """Searching for a ball / moving to scanning point"""
-                scan_point_goal = Position(
-                    self.scan_points[self.curr_scan_point].x / 2,
-                    self.scan_points[self.curr_scan_point].y / 2,
-                    self._angle_between_points([self.robot_pose['x'], self.robot_pose['y']],
-                                               [self.scan_points[self.curr_scan_point].x / 2,
-                                                self.scan_points[self.curr_scan_point].y / 2]),
-                    PositionTypes.SCAN_POINT
-                )
-
-                if self.prev_scan_point != self.curr_scan_point:
-                    self.goal_position_q.put(scan_point_goal) # Insert the new scan point into the goal_position queue
-                    if self.debug: print(f"************ New scan point: {scan_point_goal}")
-
-                    if self.prev_scan_point is None: # Means we're at the first scan point
-                        self.prev_scan_point = 0
-                    else:
-                        self.prev_scan_point = self.curr_scan_point
-
-
-                if self._is_goal_reached(*scan_point_goal.coords, self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['th']):
-                    if self.debug: print(f"************ New scan point: Scanning point reached: {scan_point_goal.x}, {scan_point_goal.y}")
-                    self.curr_scan_point += 1
-                    if self.curr_scan_point >= len(self.scan_points):
-                        self.curr_scan_point = 0
-                    if self.debug: print(f"Scanning point incremented: {self.curr_scan_point}")
 
 
                 # print(self.shared_data['robot_state'])
@@ -176,8 +152,8 @@ class Coordinator:
                 # time.sleep(5)
 
                 # Graphing
-                self.plot() # Update the plot
                 # self.logger.info("Coordinator is running")
+                continue
 
         except KeyboardInterrupt:
             self.logger.info("Exiting Coordinator")
