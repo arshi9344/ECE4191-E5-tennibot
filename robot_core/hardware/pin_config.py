@@ -24,6 +24,11 @@ MR_IN3 = 22 # IN3
 MR_IN4 = 10 # IN4
 MR_ENB = 9 # Used for PWM
 
+# SERVO PINS
+DOOR_PIN = 16
+STAMP_PINS = [19,12] # STAMP PIN LEFT IN LIST IS
+
+
 if __name__ == '__main__':
     try:
         import RPi.GPIO as GPIO
