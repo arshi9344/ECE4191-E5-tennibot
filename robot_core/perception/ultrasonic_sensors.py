@@ -189,11 +189,13 @@ class UltrasonicSensor:
                 # Check if both distances are below the depot distance threshold
                 if left_distance < depot_distance_threshold and right_distance < depot_distance_threshold:
                     print("you have arrived and are alligned!")
+                    return 'arrived'
                 else:
                     # Command to drive straight until both distances are below the threshold
                     if self.debug:
                         print("Driving straight...")
-                        return (right_distance + left_distance) / 2
+
+                    return ['distance',(right_distance + left_distance) / 2]
     
             else:
                 # If right sensor is closer, the robot needs to rotate right
@@ -208,14 +210,14 @@ class UltrasonicSensor:
                         print(f"Robot needs to rotate right (left: {left_distance} cm, right: {right_distance} cm)")
                         print(f"rotating by: {angle_radians} rad which is {angle_degrees} deg")  # Call the function to rotate right
                     rotation = angle_radians
-                    return rotation
+                    return ['rotate',rotation]
                 
                 else:  # left_distance < right_distance
                     if self.debug:
                         print(f"Robot needs to rotate left (left: {left_distance} cm, right: {right_distance} cm)")
                         print(f"rotating by: {-angle_radians} rad which is {angle_degrees} deg")  # Call the function to rotate left
                     rotation = -angle_radians
-                    return rotation
+                    return ['rotate',rotation]
 
             # ADD A DELAY HERE TO ALLOW FOR ROTATION TO BE PERFORMED
 

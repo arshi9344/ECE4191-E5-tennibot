@@ -71,6 +71,7 @@ class Orchestrator(mp.Process):
         # These are initialised inside run()
         self.robot = None
         self.ultrasonic = None
+        self.servo = None
 
 
 
@@ -110,6 +111,30 @@ class Orchestrator(mp.Process):
         self.last_update = now
         return dt
 
+
+    def movement(self, x, y, th):
+        # Calculate control outputs (robot base linear and angular velocities) using the planner
+        inputs = self.planner.get_control_inputs(x, y, th, *self.robot.pose, strategy='tentacles')
+        # Calculate the duty cycles for the left and right wheels using the controller
+        linear_vel, angular_vel  = inputs['linear_velocity'], inputs['angular_velocity']
+        goal_reached = inputs['goal_reached']
+        # if goal_reached: print(f"Goal reached! x:{goal.x}, y:{goal.y}, th:{goal.th}")
+
+        duty_cycle_l, duty_cycle_r, wl_desired, wr_desired = self.controller.drive(
+            linear_vel,
+            angular_vel,
+            self.robot.wl,
+            self.robot.wr
+        )
+
+        # print(f"\nGoal: {goal.x}, {goal.y}, {goal.th}, Current: {self.robot.x}, {self.robot.y}, {self.robot.th}")
+        # Apply the duty cycles to the robot wheels
+        # print(f"Duty Cycle: {duty_cycle_l}, {duty_cycle_r}\n\n")
+        self.robot.pose_update(duty_cycle_l, duty_cycle_r)
+        # self.robot.pose_update(90, 90)
+
+        return goal_reached, inputs
+
     def run(self):
         try:
             self.print_process()
@@ -126,6 +151,9 @@ class Orchestrator(mp.Process):
 
                     from robot_core.perception.ultrasonic_sensors import UltrasonicSensor
                     self.ultrasonic = UltrasonicSensor(num_samples=20)
+
+                    from robot_core.hardware.servo_controller import ServoController
+                    self.servo = ServoController()
             else:
                 reality = 'simulated'
                 from robot_core.hardware.simulated_diff_drive_robot import DiffDriveRobot
@@ -142,39 +170,54 @@ class Orchestrator(mp.Process):
                     self.logger.info(f"Orchestrator running {counter}. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
                     # Get the robot's goal position from the shared goal_position queue
                     goal = self.get_latest_goal(goal)
-                    # Calculate control outputs (robot base linear and angular velocities) using the planner
-                    inputs = self.planner.get_control_inputs(goal.x, goal.y, goal.th, *self.robot.pose, strategy='tentacles')
-                    # Calculate the duty cycles for the left and right wheels using the controller
-                    linear_vel, angular_vel  = inputs['linear_velocity'], inputs['angular_velocity']
-                    goal_reached = inputs['goal_reached']
-                    # if goal_reached: print(f"Goal reached! x:{goal.x}, y:{goal.y}, th:{goal.th}")
-
-                    duty_cycle_l, duty_cycle_r, wl_desired, wr_desired = self.controller.drive(
-                        linear_vel,
-                        angular_vel,
-                        self.robot.wl,
-                        self.robot.wr
-                    )
-                    # print(f"\nGoal: {goal.x}, {goal.y}, {goal.th}, Current: {self.robot.x}, {self.robot.y}, {self.robot.th}")
-                    # Apply the duty cycles to the robot wheels
-                    # print(f"Duty Cycle: {duty_cycle_l}, {duty_cycle_r}\n\n")
-                    self.robot.pose_update(duty_cycle_l, duty_cycle_r)
-                    # self.robot.pose_update(90, 90)
-
+                    
+                    goal_reached, inputs = self.movement(goal.x, goal.y, goal.th)
 
 
                 elif self.shared_data['robot_state'].get() == RobotStates.STOP:
-#                     self.robot.set_motor_speed(0, 0)
-                    pass
+                    self.robot.set_motor_speed(0, 0)
 
                 elif self.shared_data['robot_state'].get() == RobotStates.COLLECT:
                     # We're now collecting a ball, so insert servo control logic here
-#                     self.robot.set_motor_speed(0, 0)
-                    pass
+                    self.servo.stamp()
+                    # Move towards the collection point     
+                    goal = self.get_latest_goal(goal)
+                    goal_reached = self.movement(goal.x, goal.y, goal.th)
+                    
+                    if goal_reached:
+                        # Stop the robot and collect the object
+                        self.robot.set_motor_speed(0, 0)
+                        self.servo.stamp()  # Activate the collection mechanism
+
+
 
                 elif self.shared_data['robot_state'].get() == RobotStates.DEPOSIT:
                     # We're now depositing the balls, so insert servo control logic here
+                    self.robot.set_motor_speed(0, 0)
+                    self.servo.deposit()
+
+                elif self.shared_data['robot_state'].get() == RobotStates.ALIGN:
+                    # This should be run after the box has been detected, now aligning the robot via ultrasonic sensors
 #                     self.robot.set_motor_speed(0, 0)
+
+
+                    # Once in desired location to begin scanning the drop off box
+                    check_return = 0
+                    while check_return != 'arrived':
+                        check_return = self.ultrasonic.check_alignment(depot_distance_threshold=15, alignment_tolerance=1.2)   
+                        if check_return[0] == 'distance':
+                            # Drive set distance in a straight line
+                            distance = check_return[1]
+                            self.robot.set_motor_speed(1,1)
+
+                        elif check_return[0] == 'rotate':
+                            # Rotate on the spot by the desired angle
+                            angle_rad = check_return[1]
+                            self.movement(self.robot.x,self.robot.y,self.robot.th + angle_rad )
+
+                        elif check_return == 'arrived':
+                            pass
+
                     pass
 
 

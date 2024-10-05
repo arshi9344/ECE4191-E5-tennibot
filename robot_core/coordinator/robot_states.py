@@ -6,6 +6,7 @@ class RobotStates(Enum):
     RETURN = 3
     DEPOSIT = 4
     STOP = 5
+    ALIGN = 6
 
 class VisionStates(Enum):
     NONE = 0
