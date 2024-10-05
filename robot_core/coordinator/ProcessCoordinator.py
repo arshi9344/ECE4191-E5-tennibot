@@ -35,7 +35,9 @@ class Coordinator:
             clear_output=False,
             court_dimensions = (4.12, 5.48),
             debug=False,
-            plot_time_window=5
+            plot_time_window=5,
+            efficient_plotting=False,
+            save_figs=False
     ):
         self.manager = Manager()
         self.shared_data = {
@@ -67,7 +69,7 @@ class Coordinator:
         self.live_graphs = live_graphs
         self.clear_output = clear_output
         self.plotter = None
-        if live_graphs: self.plotter = RobotPlotter(max_time_window=plot_time_window)
+        if live_graphs: self.plotter = RobotPlotter(max_time_window=plot_time_window, save_figs=save_figs, efficient_mode=efficient_plotting)
 
         # Shared image data. may ONLY be written to by VisionRunner and read by everything else. This is only necessary for plotting.
         self.latest_image = self.manager.dict({'time': None, 'frame': None})
