@@ -29,7 +29,7 @@ class Orchestrator(mp.Process):
     def __init__(
             self,
             shared_data,
-            goal_position_q,
+            goal_position,
             robot_pose,
             robot_graph_data,
             log_queue,
@@ -50,7 +50,7 @@ class Orchestrator(mp.Process):
         print(f"Logger parent: {self.logger.parent}")
 
         self.shared_data = shared_data # Shared data like robot pose (updated by orchestrator) and also motion state (read by orchestrator)
-        self.goal_position_q = goal_position_q # Queue, Consumed (read) by Orchestrator to adjust robot's pose
+        self.goal_position = goal_position # Dict, Consumed (read) by Orchestrator to adjust robot's pose
         self.robot_pose = robot_pose # Updated by Orchestrator
         self.robot_graph_data = robot_graph_data # Updated by Orchestrator
 
@@ -295,9 +295,9 @@ class Orchestrator(mp.Process):
 
     def get_latest_goal(self, current_goal) -> Position:
         try:
-            res = self.goal_position_q.get_nowait()
+            res = self.goal_position['goal']
             # print(f"get_latest_goal: {res}")
-        except Empty:
+        except Exception:
             # If queue is empty, return the current goal (no change)
             res = current_goal
 

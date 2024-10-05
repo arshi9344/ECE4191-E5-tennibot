@@ -46,7 +46,10 @@ class Coordinator:
             'vision_state': StateWrapper(self.manager, VisionStates, VisionStates.NONE),
         }
         self.robot_pose = self.manager.dict({'x': 0, 'y': 0, 'th': 0})
-        self.goal_position_q = self.manager.Queue() # This should always only contain one or zero Position objects from robot_core.utils.position
+        self.goal_position = self.manager.dict({
+            'goal': None, # Goal should be a Position object from robot_core.utils.position
+            'time': None  # The time that the goal is set
+        })
 
         """
         mini-explainer for the goal_position Queue:
@@ -95,7 +98,7 @@ class Coordinator:
         # Orchestrator
         self.orchestrator = Orchestrator(
             shared_data=self.shared_data,
-            goal_position_q=self.goal_position_q,
+            goal_position=self.goal_position,
             robot_pose=self.robot_pose,
             robot_graph_data=self.robot_graph_data,
             log_queue=self.log_queue,
@@ -108,6 +111,7 @@ class Coordinator:
         self.vision_runner = VisionRunner(
             shared_data=self.shared_data,
             shared_image=self.latest_image,
+            goal_position=self.goal_position,
             log_queue=self.log_queue,
             log=self.log,
             camera_idx=1,
@@ -141,11 +145,11 @@ class Coordinator:
             while self.shared_data['running']:
                 """Searching for a ball / moving to scanning point"""
                 scan_point_goal = Position(
-                    self.scan_points[self.curr_scan_point].x,
-                    self.scan_points[self.curr_scan_point].y,
+                    self.scan_points[self.curr_scan_point].x / 2,
+                    self.scan_points[self.curr_scan_point].y / 2,
                     self._angle_between_points([self.robot_pose['x'], self.robot_pose['y']],
-                                               [self.scan_points[self.curr_scan_point].x,
-                                                self.scan_points[self.curr_scan_point].y]),
+                                               [self.scan_points[self.curr_scan_point].x / 2,
+                                                self.scan_points[self.curr_scan_point].y / 2]),
                     PositionTypes.SCAN_POINT
                 )
 

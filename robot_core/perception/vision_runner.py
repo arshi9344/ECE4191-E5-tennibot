@@ -26,6 +26,7 @@ class VisionRunner(mp.Process):
             shared_data,
             shared_image,
             log_queue,
+            goal_position,
             camera_idx,
             log=False,
             scanning_interval=0.5,
@@ -42,7 +43,7 @@ class VisionRunner(mp.Process):
         self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
 
         self.last_update = None
-
+        self.goal_position = goal_position # shared dictionary object, read by Orchestrator
         # TODO: Add class instances here for TennisBallDetector and BoxDetector
         self.camera_idx = camera_idx
         self.camera = None
@@ -83,7 +84,14 @@ class VisionRunner(mp.Process):
 
 
                         # Now, dependent on what we're checking for (either box or ball), we can add the appropriate logic here
-
+                        """
+                        get the x and y of the ball
+                    
+                        """
+                        self.ball_position.update({
+                            'x': 1,
+                            'y': 2
+                        })
                         # Add scanning here, dependent on self.shared_data['robot_state']
 
                         time.sleep(self.scanning_interval) # The only problem with this approach is that we always need to wait for the interval to pass, we can't immediately request an image
