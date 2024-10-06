@@ -31,6 +31,8 @@ class VisionRunner(mp.Process):
             log_queue,
             goal_position,
             camera_idx,
+            collection_zone=(200, 150, 400, 350),
+            camera_height=0.02,
             log=False,
             scanning_interval=0.5,
             use_simulated_video=False
@@ -51,7 +53,7 @@ class VisionRunner(mp.Process):
         self.camera_idx = camera_idx
         self.camera = None
         self.frame = None
-
+        self.collection_zone = collection_zone
         self.simulate = use_simulated_video
 
         self.tennis_ball_detector = None
@@ -69,14 +71,18 @@ class VisionRunner(mp.Process):
         # calibration_data = np.load(npz_file_path)
         # camera_matrix = calibration_data['camera_matrix']
         # distortion_coeffs = calibration_data['dist_coeffs']
-        collection_zone = (200, 150, 400, 350)  # Define a region for collection, x_min, y_min, x_max, y_max
-        camera_height = 0.02  # Camera height in meters (2 cm)
+        self.collection_zone = collection_zone # Define a region for collection, x_min, y_min, x_max, y_max
+        self.camera_height = camera_height  # Camera height in meters (2 cm)
+
+
+
+    def run(self):
 
         # Initialize the TennisBallDetector with camera height
         try:
             self.tennis_ball_detector = TennisBallDetectorHeight(
-                collection_zone=collection_zone,
-                camera_height=camera_height,
+                collection_zone=self.collection_zone,
+                camera_height=self.camera_height,
                 cache=True,  # Use the cache for the YOLO model if it exists
                 windows=False,  # Path handling for Windows
                 verbose=True  # Enable verbose logging for debugging
@@ -84,11 +90,11 @@ class VisionRunner(mp.Process):
         except Exception:
             print(f"Error loading TennisBallDetector: {traceback.print_exc()}")
 
-    def run(self):
         if not self.simulate:
             if not self.open_camera():
                 print("Exiting VisionRunner run().")
                 return
+
 
             try:
                 while self.shared_data['running']:
@@ -105,26 +111,25 @@ class VisionRunner(mp.Process):
                         For now, we will just update the shared image with the raw frame for debugging purposes so we can 
                         figure out what's going on with the TennisBallDetector and why Torch is having that 'module not found' error.
                         """
-                        # detection = self.tennis_ball_detector.detect(self.frame)
-
-                        # self.last_update = time.time()
-                        # self.shared_image.update({
-                        #     'time': self.last_update,
-                        #     'frame': detection["annotated_frame"]
-                        # })
-                        #
-                        # x, y = detection["cartesian_coords"]
-                        # self.goal_position.update({
-                        #     'goal': Position(x, y, 0, PositionTypes.BALL),
-                        #     'time': time.time()
-                        # })
+                        detection = self.tennis_ball_detector.detect(self.frame)
 
                         self.last_update = time.time()
-                        frame_rgb = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
                         self.shared_image.update({
                             'time': self.last_update,
-                            'frame': frame_rgb
+                            'frame': detection["annotated_frame"]
                         })
+
+                        """
+                        Directly updating the goal position here with ball coords, but this should be passed via a shared queue object into the occupancy map
+                        """
+                        coords = detection["cartesian_coords"]
+                        if coords is not None:
+                            x, y = coords
+                            self.goal_position.update({
+                                'goal': Position(x, y, 0, PositionTypes.BALL),
+                                'time': time.time()
+                            })
+
 
                         time.sleep(self.scanning_interval) # The only problem with this approach is that we always need to wait for the interval to pass, we can't immediately request an image
 
@@ -194,9 +199,9 @@ if __name__ == '__main__':
     )
     try:
         vision_runner.start()
-        time.sleep(3)
         while True:
-            plt.imshow(shared_image['frame'])
+            if shared_image['frame'] is not None:
+                plt.imshow(shared_image['frame'])
             plt.show()
             time.sleep(1)
 

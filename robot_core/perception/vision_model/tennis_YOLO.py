@@ -167,7 +167,7 @@ class TennisBallDetectorHeight:
         """
         # Base detection result with values needed for both verbose and non-verbose modes
         detection_result = {
-            "annotated_frame": None,
+            "annotated_frame": cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
             "horizontal_distance": None,
             "in_collection_zone": False,
             "total_distance": None,
