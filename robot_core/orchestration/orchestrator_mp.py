@@ -9,15 +9,20 @@ import logging
 import queue
 import os
 import psutil
+from queue import Empty
+import traceback
+
 
 from matplotlib import pyplot as plt
 
 from robot_core.control.PI_controller import PIController
 from robot_core.motion.tentacle_planner import TentaclePlanner
-from robot_core.hardware.simulated_diff_drive_robot import DiffDriveRobot
 from robot_core.utils.logging_utils import setup_logging
+from robot_core.utils.robot_log_point import RobotLogPoint
 from robot_core.orchestration.scan_point_utils import ScanPointGenerator
 from robot_core.coordinator.robot_states import RobotStates
+from robot_core.utils.position import Position, PositionTypes
+# from robot_core.perception.ultrasonic_sensors import UltrasonicSensor # moved import inside the Orchestrator.run() method
 """
 
 """
@@ -30,11 +35,12 @@ class Orchestrator(mp.Process):
             robot_pose,
             robot_graph_data,
             log_queue,
-            robot=None,
+            simulated_robot, # boolean
             controller=None,
             planner=None,
             dt=None,
-            log=False
+            log=False,
+            debug=False
     ):
         super().__init__()
         if log: setup_logging(log_queue)
@@ -46,12 +52,14 @@ class Orchestrator(mp.Process):
         print(f"Logger parent: {self.logger.parent}")
 
         self.shared_data = shared_data # Shared data like robot pose (updated by orchestrator) and also motion state (read by orchestrator)
-        self.goal_position = goal_position # Consumed (read) by Orchestrator to adjust robot's pose
+        self.goal_position = goal_position # Dict, Consumed (read) by Orchestrator to adjust robot's pose
         self.robot_pose = robot_pose # Updated by Orchestrator
         self.robot_graph_data = robot_graph_data # Updated by Orchestrator
 
         self.last_update = None
         self.start_time = None
+        self.simulated_robot : bool = simulated_robot # boolean
+        self.debug = debug
         # Initialising subcomponents (robot, controller, planner)
         self.logger.info(f"Initialising Orchestrator:")
         self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
@@ -62,12 +70,11 @@ class Orchestrator(mp.Process):
             self.dt = dt
         self.logger.info(f"    Using dt={self.dt}")
 
-        reality = 'real' if robot else 'simulated'
-        if not robot:
-            self.robot = DiffDriveRobot(0.03, real_time=True)
-        else:
-            self.robot = robot
-        self.logger.info(f"    Initialised {reality} robot.")
+        # These are initialised inside run()
+        self.robot = None
+        self.ultrasonic = None
+        self.servo = None
+
 
 
         if not controller:
@@ -106,64 +113,147 @@ class Orchestrator(mp.Process):
         self.last_update = now
         return dt
 
+
+    def movement(self, x, y, th):
+        # Calculate control outputs (robot base linear and angular velocities) using the planner
+        inputs = self.planner.get_control_inputs(x, y, th, *self.robot.pose, strategy='tentacles')
+        # Calculate the duty cycles for the left and right wheels using the controller
+        linear_vel, angular_vel  = inputs['linear_velocity'], inputs['angular_velocity']
+        goal_reached = inputs['goal_reached']
+        # if goal_reached: print(f"Goal reached! x:{goal.x}, y:{goal.y}, th:{goal.th}")
+
+        duty_cycle_l, duty_cycle_r, wl_desired, wr_desired = self.controller.drive(
+            linear_vel,
+            angular_vel,
+            self.robot.wl,
+            self.robot.wr
+        )
+
+        # print(f"\nGoal: {goal.x}, {goal.y}, {goal.th}, Current: {self.robot.x}, {self.robot.y}, {self.robot.th}")
+        # Apply the duty cycles to the robot wheels
+        # print(f"Duty Cycle: {duty_cycle_l}, {duty_cycle_r}\n\n")
+        self.robot.pose_update(duty_cycle_l, duty_cycle_r)
+
+        return {
+            "goal_reached": goal_reached,
+            "inputs": inputs,
+            "duty_cycle_l": duty_cycle_l,
+            "duty_cycle_r": duty_cycle_r,
+            "wl_desired": wl_desired,
+            "wr_desired": wr_desired
+        }
+
     def run(self):
         try:
             self.print_process()
             self.start_time = time.time()
             wl_desired, wr_desired, duty_cycle_l, duty_cycle_r, goal_x, goal_y, goal_th = None, None, None, None, None, None, None
-            counter = 0
+            goal = Position(0, 0, 0, PositionTypes.ROBOT)
+
+            # Initialise Robot and Ultrasonic sensors
+            if not self.simulated_robot:
+                    reality = 'real'
+                    from robot_core.hardware.diff_drive_robot import DiffDriveRobot
+                    self.robot = DiffDriveRobot(0.03, real_time=True)
+
+                    from robot_core.perception.ultrasonic_sensors import UltrasonicSensor
+                    self.ultrasonic = UltrasonicSensor(num_samples=20)
+
+                    from robot_core.hardware.servo_controller import ServoController
+                    self.servo = ServoController()
+            else:
+                reality = 'simulated'
+                from robot_core.hardware.simulated_diff_drive_robot import DiffDriveRobot
+                self.robot = DiffDriveRobot(0.03, real_time=True)
+
+            print(f"    Initialised {reality} robot.")
+
             while self.shared_data['running']:
-                counter += 1
+                # self.logger.setLevel(logging.DEBUG)  # or logging.INFO
+                # print(f"Orchestrator running. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
 
-                if self.shared_data['robot_state'].get() == RobotStates.DRIVE:
-                    self.logger.setLevel(logging.DEBUG)  # or logging.INFO
+                if self.shared_data['robot_state'].get() == RobotStates.SEARCH:
+                    # Get the robot's goal position from the shared goal_position queue
+                    goal = self.get_latest_goal(goal)
 
-                    # print(f"Orchestrator running {counter}. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
-                    self.logger.info(f"Orchestrator running {counter}. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
+                    res = self.movement(goal.x, goal.y, goal.th)
 
-                    # Get the robot's goal position from the shared goal_position dict
-                    goal_x, goal_y, goal_th = self.goal_position['x'], self.goal_position['y'], self.goal_position['th']
-                    # print(f"Goal Position: {goal_x:.2f}, {goal_y:.2f}, {goal_th:.2f}, Robot Pose: {self.robot.x:.2f}, {self.robot.y:.2f}, {self.robot.th:.2f}")
-                    # Calculate control inputs (robot base linear and angular velocities) using the planner
-                    inputs = self.planner.get_control_inputs(goal_x, goal_y, goal_th, *self.robot.pose, strategy='tentacles')
-                    # Calculate the duty cycles for the left and right wheels using the controller
-                    linear_vel, angular_vel  = inputs['linear_velocity'], inputs['angular_velocity']
-                    duty_cycle_l, duty_cycle_r, wl_desired, wr_desired = self.controller.drive(
-                        linear_vel,
-                        angular_vel,
-                        self.robot.wl,
-                        self.robot.wr
+                    self.log_data(
+                        res['wl_desired'],
+                        res['wr_desired'],
+                        res['duty_cycle_l'],
+                        res['duty_cycle_r'],
+                        goal
                     )
-                    # Apply the duty cycles to the robot wheels
-                    self.robot.pose_update(duty_cycle_l, duty_cycle_r)
-                    # self.robot.pose_update(90, 90)
-
-
 
                 elif self.shared_data['robot_state'].get() == RobotStates.STOP:
                     self.robot.set_motor_speed(0, 0)
+                    self.log_data(
+                        0,
+                        0,
+                        0,
+                        0,
+                        Position(None, None, None, PositionTypes.ROBOT)
+                    )
 
                 elif self.shared_data['robot_state'].get() == RobotStates.COLLECT:
-                    # We're now collecting a ball, so insert servo control logic here
-                    self.robot.set_motor_speed(0, 0)
+                    # Move towards the collection point
+                    goal = self.get_latest_goal(goal)
+                    res = self.movement(goal.x, goal.y, goal.th)
+                    goal_reached = res['goal_reached']
+                    
+                    if goal_reached:
+                        # Stop the robot and collect the object
+                        self.robot.set_motor_speed(0, 0)
+                        self.servo.stamp()  # Activate the collection mechanism
+
+
 
                 elif self.shared_data['robot_state'].get() == RobotStates.DEPOSIT:
                     # We're now depositing the balls, so insert servo control logic here
                     self.robot.set_motor_speed(0, 0)
+                    self.servo.deposit()
+                    self.log_data(
+                        0,
+                        0,
+                        0,
+                        0,
+                        Position(None, None, None, PositionTypes.ROBOT)
+                    )
+
+                elif self.shared_data['robot_state'].get() == RobotStates.ALIGN:
+                    # This should be run after the box has been detected, now aligning the robot via ultrasonic sensors
+#                     self.robot.set_motor_speed(0, 0)
 
 
-                # Logging everything
-                data = {
-                    'pose': self.robot.pose,
-                    'current_wheel_w': (self.robot.wl, self.robot.wr),
-                    'target_wheel_w': (wl_desired, wr_desired),
-                    'duty_cycle_commands': (duty_cycle_l, duty_cycle_r),
-                    'goal_position': (goal_x, goal_y, goal_th),
+                    # Once in desired location to begin scanning the drop off box
+                    check_return = self.ultrasonic.check_alignment(depot_distance_threshold=15, alignment_tolerance=1.2)
+                    if check_return[0] == 'distance':
+                        # Drive set distance in a straight line
+                        distance = check_return[1]
+                        self.robot.set_motor_speed(1,1)
 
-                }
-                # print(data)
-                self.logger.info(json.dumps(data))
-                self.robot_graph_data.append(data)
+                    elif check_return[0] == 'rotate':
+                        # Rotate on the spot by the desired angle
+                        angle_rad = check_return[1]
+                        self.movement(self.robot.x,self.robot.y,self.robot.th + angle_rad )
+
+                    elif check_return == 'arrived':
+                        # In the robot state queue, notify the queue itself that the object has been processed
+                            pass
+
+
+                    self.log_data(
+                        0,
+                        0,
+                        0,
+                        0,
+                        Position(None, None, None, PositionTypes.ROBOT)
+                    )
+
+
+
+
                 # print(self.robot_graph_data[-1])
                 # print(json.dumps(data))
 
@@ -175,11 +265,13 @@ class Orchestrator(mp.Process):
                 })
 
                 # Sleep for 0.1s before the next iteration
-                time.sleep(self.dt)
-                # time.sleep(1)
+                if not self.simulated_robot: time.sleep(self.dt)
+                else: time.sleep(self.dt/20)
 
             # We only reach this point if the shared_data['running'] flag is False
             self.logger.info("Orchestrator stopping, running Flag is false")
+            if self.robot is not None and not self.simulated_robot:
+                self.robot.set_motor_speed(0, 0)
             self.robot.set_motor_speed(0, 0)
             return
 
@@ -187,11 +279,34 @@ class Orchestrator(mp.Process):
             self.logger.info("Keyboard interrupt. Stopping robot.")
 
         except Exception as e:
-            self.logger.error(f"Error in Orchestrator, Stopping robot: {e}")
-
-        self.robot.set_motor_speed(0, 0)
+            self.logger.error(f"Error in Orchestrator, Stopping robot: {traceback.print_exc()}")
+        if self.robot is not None and not self.simulated_robot:
+            self.robot.set_motor_speed(0, 0)
         return
 
+    def log_data(self, wl_desired, wr_desired, duty_cycle_l, duty_cycle_r, goal: Position):
+        # Logging everything
+        log_point = RobotLogPoint(
+            pose=self.robot.pose,
+            current_wheel_w=(self.robot.wl, self.robot.wr),
+            target_wheel_w=(wl_desired, wr_desired),
+            duty_cycle_commands=(duty_cycle_l, duty_cycle_r),
+            goal_position=goal,
+            time=time.time()
+        )
+        self.robot_graph_data.append(log_point)
+
+    def get_latest_goal(self, current_goal) -> Position:
+        try:
+            res = self.goal_position['goal']
+            # print(f"get_latest_goal: {res}")
+        except Exception:
+            # If queue is empty, return the current goal (no change)
+            res = current_goal
+
+        if self.debug and current_goal != res:
+            print(f"************ Orchestrator: New goal received! {res}")
+        return res
 
     def print_process(self):
         # Get the current process ID
@@ -199,110 +314,3 @@ class Orchestrator(mp.Process):
         # Get the CPU core this process is running on
         process = psutil.Process(pid)
         print(f"Orchestrator Process (PID: {pid}) running with: {process.num_threads()} threads")
-
-    def update_plot(self, fig, axes, clear_output=False):
-        # assert that fig and azes are a subplot of 2x2
-        plt.ion()
-        plt.close(fig)
-
-        if fig is None or axes is None:
-            raise ValueError("Please provide a figure and axes to update the plot, e.g. \nfig, axes = plt.subplots(2, 2, figsize=(12, 10))")
-        if isinstance(self.robot_graph_data, type(None)):
-            return
-        try:
-            if len(self.robot_graph_data) == 0:
-                return
-        except TypeError:
-            print("Inside update_plot, robot graph data is none.")
-            return
-
-        plt.ion()
-        # axes_flat = axes.flatten()  # Flatten the 2D array of axes
-        for ax in axes:
-            ax.clear()
-
-        data = self.robot_graph_data
-        # Plot 1: Robot path and orientation
-        poses = np.array([ele['pose'] for ele in data])
-        if len(poses) > 0:
-            axes[0].clear()
-            axes[0].plot(np.array(poses)[:, 0], np.array(poses)[:, 1])
-            x, y, th = poses[-1]
-            axes[0].plot(x, y, 'k', marker='+')
-            axes[0].quiver(x, y, 0.1 * np.cos(th), 0.1 * np.sin(th))
-        axes[0].set_xlabel('x-position (m)')
-        axes[0].set_ylabel('y-position (m)')
-        axes[0].set_title(
-            f"Robot Pose Over Time. Kp: {self.controller.Kp}, Ki: {self.controller.Ki}")
-        axes[0].axis('equal')
-        axes[0].grid()
-
-        # Plot 2: Duty cycle commands
-        duty_cycle_commands = np.array([ele['duty_cycle_commands'] for ele in data])
-        if len(duty_cycle_commands) > 0:
-            axes[1].clear()
-            duty_cycle_commands = np.array(duty_cycle_commands)
-            axes[1].plot(duty_cycle_commands[:, 0], label='Left Wheel')
-            axes[1].plot(duty_cycle_commands[:, 1], label='Right Wheel')
-
-        axes[1].set_xlabel('Time (s)')
-        axes[1].set_ylabel('Duty Cycle')
-        axes[1].set_title('Duty Cycle Commands Over Time')
-        axes[1].legend()
-        axes[1].grid()
-
-        # Plot 3: Wheel velocities
-        velocities = np.array([ele['current_wheel_w'] for ele in data])
-        desired_velocities = np.array([ele['target_wheel_w'] for ele in data])
-        if len(velocities) > 0 and len(desired_velocities) > 0:
-            axes[2].clear()
-            axes[2].plot(velocities[:, 0], label='Left Wheel')
-            axes[2].plot(velocities[:, 1], label='Right Wheel')
-            axes[2].plot(desired_velocities[:, 0], label='Desired Left Wheel')
-            axes[2].plot(desired_velocities[:, 1], label='Desired Right Wheel')
-        axes[2].set_xlabel('Time Step')
-        axes[2].set_ylabel('Wheel Velocity (rad/s)')
-        axes[2].set_title('Wheel Velocity vs. Time')
-        axes[2].legend()
-        axes[2].grid()
-
-        # Plot 4: Goal Positions vs. actual position
-        goal_positions = np.array([ele['goal_position'] for ele in data])
-
-        # Add (0, 0) to both goal_positions and poses
-        goal_positions = np.vstack(((0, 0, 0), goal_positions))
-        poses = np.vstack(([0, 0, 0], poses))
-        # scan_locations = np.array(orchestrator.scan_locations
-
-        axes[3].clear()
-        axes[3].plot(0, 0, 'ko', markersize=10, label='Start (0, 0)')  # Add point at (0, 0)
-
-        if len(poses) > 0:
-            axes[3].plot(poses[:, 0], poses[:, 1], 'b-', label='Actual Path')
-            axes[3].scatter(poses[:, 0], poses[:, 1], color='b', s=5)  # Add dots for each position with custom size
-        if len(goal_positions) > 1:
-            axes[3].plot(goal_positions[:, 0], goal_positions[:, 1], 'r--', label='Goal Path')
-            axes[3].plot(goal_positions[:, 0], goal_positions[:, 1], 'r.')  # Add dots for each goal position
-        # if len(scan_locations) > 1:
-        #     axes[1, 1].scatter(scan_locations[:, 0], scan_locations[:, 1], color='g', s=20,
-        #                        label='Scan Locations')  # Add dots for each scan position
-
-        axes[3].set_xlabel('x-position (m)')
-        axes[3].set_ylabel('y-position (m)')
-        if self.start_time is not None:
-            duration = time.time() - self.start_time
-        else:
-            duration = 0
-        axes[3].set_title(f"Robot Positions. t={duration:.2f} sec")
-        axes[3].axis('equal')
-        axes[3].grid(True)
-        axes[3].legend()
-
-        fig.tight_layout()
-        fig.canvas.draw()
-        plt.pause(0.001)
-
-        if clear_output:
-            display.clear_output(wait=True)
-        plt.show()
-        display.display(fig)

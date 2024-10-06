@@ -3,10 +3,12 @@ import numpy as np
 
 try: # Import the GPIO library. If it fails, we assume we are running on a non-Raspberry Pi system.
     import RPi.GPIO as GPIO
+    GPIO.setmode(GPIO.BCM)
     import gpiozero
 except ImportError:
     print("Not running on Raspberry Pi. GPIO library not imported.")
     pass
+
 
 
 from robot_core.utils.filters import LowPassFilter
@@ -33,6 +35,8 @@ class DiffDriveRobot:
             mr_encA=MR_ENC_A,
             mr_encB=MR_ENC_B
     ):
+        print("start of robot constructor")
+
         self.x = 0.0  # x-position, meters
         self.y = 0.0  # y-position, meters
         self.th = 0.0  # orientation, angle in radians
@@ -55,14 +59,19 @@ class DiffDriveRobot:
         self.last_update = None  # last time the control loop ran
 
         # Pin numbers
+
         self.motor_L_in1 = ml_in1  # Input 1 (motor left)
         self.motor_L_in2 = ml_in2  # Input 2 (motor left)
         self.motor_R_in3 = mr_in3  # Input 3 (motor right)
         self.motor_R_in4 = mr_in4  # Input 4 (motor right)
+        print("before motor pins")
         GPIO.setup(self.motor_L_in1, GPIO.OUT)
         GPIO.setup(self.motor_L_in2, GPIO.OUT)
         GPIO.setup(self.motor_R_in3, GPIO.OUT)
         GPIO.setup(self.motor_R_in4, GPIO.OUT)
+        print("after motor pins")
+
+        
 
         # Initialize encoders
         self.ML_ENC = gpiozero.RotaryEncoder(a=ml_encA, b=ml_encB, max_steps=max_enc_steps, wrap=True)
@@ -78,6 +87,8 @@ class DiffDriveRobot:
         self.motor_R_pwm = GPIO.PWM(mr_pwm, 1000)
         self.motor_L_pwm.start(0)
         self.motor_R_pwm.start(0)
+        
+        print("end of robot constructor")
 
     '''
     This method calculates the change in encoder steps between the current and previous time step.

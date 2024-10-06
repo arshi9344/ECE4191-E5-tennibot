@@ -140,7 +140,7 @@ class TentaclePlanner:
         #             return (0.0, 0.0)  # No more goals to process
 
         if self._is_goal_reached(goal_x, goal_y, goal_th, x, y, th):
-            return (0.0, 0.0)
+            return 0.0, 0.0, True
 
         tentacle_num = 15
         angle_to_goal = self._angle_between_points((x, y), (goal_x, goal_y))
@@ -154,7 +154,7 @@ class TentaclePlanner:
 
         if abs(angle_diff) > self.max_angular_tolerance:
             # print(f"Turning: {angle_diff:.2f} rad, {best_turn_rate:.2f} rad/s")
-            return (0.0, best_turn_rate)
+            return 0.0, best_turn_rate, False
 
         # If aligned, use linear tentacles
         linear_tentacles = [(v, 0) for v in np.linspace(0, self.max_linear_velocity, tentacle_num)]
@@ -163,10 +163,10 @@ class TentaclePlanner:
 
         if abs(angle_diff) <= self.max_angular_tolerance:
             # print(f"Best linear tentacle: {best_linear_tentacle}, Best turn rate: {best_turn_rate}")
-            return (best_linear_tentacle[0], 0.0)
+            return best_linear_tentacle[0], 0.0, False
 
         # print(f"Best linear tentacle: {best_linear_tentacle}, Best turn rate: {best_turn_rate}")
-        return (best_linear_tentacle[0], best_turn_rate)
+        return best_linear_tentacle[0], best_turn_rate, False
 
 
     def _rotate(self, goal_x, goal_y, goal_th, x, y, th):
@@ -179,16 +179,16 @@ class TentaclePlanner:
 
         if abs(angle_diff) > 0.05:
             w = -abs(value) if angle_diff < 0 else abs(value)
-            return 0.0, w
+            return 0.0, w, False
 
         else:
-            return 0.0, 0.0
+            return 0.0, 0.0, True
 
     def get_control_inputs(self, goal_x, goal_y, goal_th, x, y, th, strategy='tentacles'):
         if strategy == 'rotate':
-            v, w = self._rotate(goal_x, goal_y, goal_th, x, y, th)
+            v, w, goal_reached = self._rotate(goal_x, goal_y, goal_th, x, y, th)
         elif strategy == 'tentacles':
-            v, w = self._plan_tentacles(goal_x, goal_y, goal_th, x, y, th)
+            v, w, goal_reached = self._plan_tentacles(goal_x, goal_y, goal_th, x, y, th)
         else:
             raise ValueError("Invalid strategy. Must be 'rotate_then_drive' or 'tentacles' or 'smooth_pursuit'.")
 
@@ -202,7 +202,8 @@ class TentaclePlanner:
             'current_theta': th,
             'goal_x': goal_x,
             'goal_y': goal_y,
-            'goal_theta': goal_th
+            'goal_theta': goal_th,
+            'goal_reached': goal_reached
         }
 
 
