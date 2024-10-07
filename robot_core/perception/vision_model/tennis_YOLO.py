@@ -15,6 +15,7 @@ import logging
 import sys
 sys.path.insert(0, '../vision_model')
 
+from robot_core.perception.detection_results import BallDetection, BoxDetection, DetectionResult
 
 # Define real tennis ball radius in meters (3.25 cm radius)
 MODEL_PATH = 'best.pt'
@@ -161,7 +162,7 @@ class TennisBallDetectorHeight:
             return x_min <= u <= x_max and y_min <= v <= y_max
         return False
 
-    def detect(self, frame, draw_collection_zone=True):
+    def detect(self, frame, draw_collection_zone=True) -> DetectionResult:
         """Detects the tennis ball and returns relevant distance and angle information using a single frame.
         Args:
             frame: The frame to detect the tennis ball in. Needs to be RGB colour space (not BGR).
@@ -175,15 +176,10 @@ class TennisBallDetectorHeight:
                 - 'in_collection_zone' (bool): True if the ball is within the collection zone, False otherwise.
         """
         # Base detection result with values needed for both verbose and non-verbose modes
-        detection_result = {
-            "annotated_frame": frame,
-            "horizontal_distance": None,
-            "in_collection_zone": False,
-            "total_distance": None,
-            "angle": None,
-            "cartesian_coords": None
-        }
-
+        detection_result = DetectionResult(
+            box_detection=None,
+            ball_detection=None
+        )
         if frame is None:
             print(f"Error: Frame is None")
             return detection_result
@@ -222,15 +218,17 @@ class TennisBallDetectorHeight:
                 x_min, y_min, x_max, y_max = self.collection_zone
                 cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 0, 255), 1)
 
-            detection_result.update({
-                "annotated_frame": frame,
-                "horizontal_distance": horizontal_distance,
-                "in_collection_zone": self.is_in_collection_zone(u, v),
-                "total_distance": total_distance,
-                "angle": angle,
-                "cartesian_coords": (x, y)  # Add Cartesian coordinates to result
-            })
+            ball_result = BallDetection(
+                x=x,
+                y=y,
+                angle=angle,
+                total_distance=total_distance,
+                confidence=confidence,
+                frame=frame,
+                in_collection_zone=self.is_in_collection_zone(u, v)
 
+            )
+            detection_result.ball_detection = ball_result
             if self.verbose:
                 # Verbose output
                 print(f"Horizontal Distance: {horizontal_distance:.2f} meters")

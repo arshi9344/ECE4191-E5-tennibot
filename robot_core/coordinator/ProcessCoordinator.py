@@ -51,6 +51,7 @@ class Coordinator:
             'goal': Position(0,0,0,PositionTypes.ROBOT), # Goal should be a Position object from robot_core.utils.position
             'time': None  # The time that the goal is set
         })
+        self.detection_results_q = self.manager.Queue(-1) # Queue for detection results from VisionRunner
 
         """
         mini-explainer for the goal_position Queue:
@@ -112,10 +113,10 @@ class Coordinator:
         self.vision_runner = VisionRunner(
             shared_data=self.shared_data,
             shared_image=self.latest_image,
-            goal_position=self.goal_position,
+            detection_results_q=self.detection_results_q,
             log_queue=self.log_queue,
             log=self.log,
-            camera_idx=1,
+            camera_idx=0,
             use_simulated_video=False
         )
 
@@ -138,13 +139,17 @@ class Coordinator:
     def run(self):
         self.start() # Starting Orchestrator and VisionRunner
 
+        # Setting initial states for Orchestrator and VisionRunner.
         self.shared_data['robot_state'].set(RobotStates.SEARCH)
+        # VisionRunner will constantly take pictures every 5 seconds and run it through the ML model. Results will be published to the self.detection_results_q
         self.shared_data['vision_state'].set(VisionStates.DETECT_BALL)
 
         # start with curr_scan_point = 0, prev_scan_point = None
         try:
             while self.shared_data['running']:
-                """Searching for a ball / moving to scanning point"""
+                pass
+                # This is our main control loop, where all our main logic is. Potentially, we could set the goal_position dict with goals from
+                # our occupancy map / DecisionMaker class here.
 
 
                 # print(self.shared_data['robot_state'])
@@ -153,7 +158,7 @@ class Coordinator:
 
                 # Graphing
                 # self.logger.info("Coordinator is running")
-                continue
+                # sleep(0.1)
 
         except KeyboardInterrupt:
             self.logger.info("Exiting Coordinator")
