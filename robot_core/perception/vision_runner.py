@@ -22,6 +22,7 @@ from robot_core.utils.logging_utils import setup_logging
 from robot_core.coordinator.robot_states import RobotStates, VisionStates, StateWrapper
 from robot_core.utils.position import Position, PositionTypes
 from robot_core.perception.vision_model.tennis_YOLO import TennisBallDetectorHeight
+from robot_core.perception.detection_results import BallDetection, BoxDetection, DetectionResult
 
 class VisionRunner(mp.Process):
     def __init__(
@@ -29,7 +30,7 @@ class VisionRunner(mp.Process):
             shared_data,
             shared_image,
             log_queue,
-            goal_position,
+            detection_results_q,
             camera_idx,
             collection_zone=(200, 150, 400, 350),
             camera_height=0.02,
@@ -48,7 +49,7 @@ class VisionRunner(mp.Process):
         self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
 
         self.last_update = None
-        self.goal_position = goal_position # shared dictionary object, read by Orchestrator
+        self.detection_results_q = detection_results_q # shared queue, containing the latest detection results, read by ProcessCoordinator
         # TODO: Add class instances here for TennisBallDetector and BoxDetector
         self.default_camera_idx = camera_idx
         self.camera = None
@@ -109,30 +110,27 @@ class VisionRunner(mp.Process):
                             continue
                         else:
                             # print("VisionRunner: Image captured")
-                            pass
+                            self.last_update = time.time()
 
-                        """
-                        For now, we will just update the shared image with the raw frame for debugging purposes so we can 
-                        figure out what's going on with the TennisBallDetector and why Torch is having that 'module not found' error.
-                        """
+                        # Run the detection
                         detection = self.tennis_ball_detector.detect(self.frame)
-                        self.last_update = time.time()
+
+
+                        if detection.ball_detection or detection.box_detection is not None:
+                            frame = detection.frame
+                            detection_results_q.put({
+                                'time': self.last_update,
+                                'frame': frame,
+                                'ball_detection': detection.ball_detection,
+                                'box_detection': detection.box_detection
+                            })
+                        else:
+                            frame = self.frame
+
                         self.shared_image.update({
                             'time': self.last_update,
-                            'frame': detection["annotated_frame"]
+                            'frame': frame
                         })
-
-                        """
-                        Directly updating the goal position here with ball coords, but this should be passed via a shared queue object into the occupancy map
-                        """
-                        coords = detection["cartesian_coords"]
-                        if coords is not None:
-                            x, y = coords
-                            self.goal_position.update({
-                                'goal': Position(x, y, 0, PositionTypes.BALL),
-                                'time': time.time()
-                            })
-
 
                         time.sleep(self.scanning_interval) # The only problem with this approach is that we always need to wait for the interval to pass, we can't immediately request an image
 
@@ -184,10 +182,7 @@ if __name__ == '__main__':
         'vision_state': StateWrapper(manager, VisionStates, VisionStates.DETECT_BALL),
         'robot_state': StateWrapper(manager, RobotStates, RobotStates.SEARCH)
     }
-    goal_position = manager.dict({
-        'goal': Position(None, None, None, PositionTypes.BALL),
-        'time': None
-    })
+    detection_results_q = manager.queue()
 
     log_queue = mp.Queue()
     camera_idx = 1
@@ -196,7 +191,7 @@ if __name__ == '__main__':
     vision_runner = VisionRunner(
         shared_data=shared_data,
         shared_image=shared_image,
-        goal_position=goal_position,
+        detection_results_q=detection_results_q,
         log_queue=log_queue,
         camera_idx=0,
         log=False
