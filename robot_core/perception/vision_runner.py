@@ -50,7 +50,7 @@ class VisionRunner(mp.Process):
         self.last_update = None
         self.goal_position = goal_position # shared dictionary object, read by Orchestrator
         # TODO: Add class instances here for TennisBallDetector and BoxDetector
-        self.camera_idx = camera_idx
+        self.default_camera_idx = camera_idx
         self.camera = None
         self.frame = None
         self.collection_zone = collection_zone
@@ -77,7 +77,6 @@ class VisionRunner(mp.Process):
 
 
     def run(self):
-
         # Initialize the TennisBallDetector with camera height
         try:
             self.tennis_ball_detector = TennisBallDetectorHeight(
@@ -91,15 +90,20 @@ class VisionRunner(mp.Process):
             print(f"Error loading TennisBallDetector: {traceback.print_exc()}")
 
         if not self.simulate:
-            if not self.open_camera():
-                print("Exiting VisionRunner run().")
+            try:
+                if not self.open_camera():
+                    print("Exiting VisionRunner run().")
+                    return
+            except:
+                print(f"Error opening camera: {traceback.print_exc()}")
                 return
-
 
             try:
                 while self.shared_data['running']:
                     if self.shared_data['vision_state'].get() != VisionStates.NONE:
                         ret, self.frame = self.camera.read() # capture image
+                        self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
+
                         if not ret:
                             print("VisionRunner: Failed to capture image.")
                             continue
@@ -112,7 +116,6 @@ class VisionRunner(mp.Process):
                         figure out what's going on with the TennisBallDetector and why Torch is having that 'module not found' error.
                         """
                         detection = self.tennis_ball_detector.detect(self.frame)
-
                         self.last_update = time.time()
                         self.shared_image.update({
                             'time': self.last_update,
@@ -152,12 +155,13 @@ class VisionRunner(mp.Process):
 
 
     def open_camera(self):
-        camera_idxs = [self.camera_idx, self.camera_idx + 1, self.camera_idx + 2, self.camera_idx - 1]
+        MAX_IND = 3
+        camera_idxs = [self.default_camera_idx] + [x for x in range(MAX_IND) if x != self.default_camera_idx]
         for idx in camera_idxs:
             camera = cv2.VideoCapture(idx)
             if camera.isOpened():
                 self.camera = camera
-                self.camera_idx = idx
+                self.default_camera_idx = idx
                 print(f"VisionRunner: Camera opened successfully using idx {idx}")
                 return True
 

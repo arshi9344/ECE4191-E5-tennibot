@@ -10,6 +10,7 @@ from IPython.display import display as ipy_display, clear_output
 import matplotlib.pyplot as plt
 import time
 import sys
+import logging
 
 import sys
 sys.path.insert(0, '../vision_model')
@@ -19,6 +20,7 @@ sys.path.insert(0, '../vision_model')
 MODEL_PATH = 'best.pt'
 CALIB_MATRIX_PATH = 'calib6_matrix.npz'
 
+
 class TennisBallDetectorHeight:
     """Detect tennis balls and calculate distances and angles relative to the camera.
 
@@ -27,8 +29,15 @@ class TennisBallDetectorHeight:
     Optionally, frames can be shown, and verbose output can be enabled.
     """
 
-    def __init__(self, model_path=MODEL_PATH, calibration_data_path=CALIB_MATRIX_PATH, collection_zone=None, camera_height=0,
-                 cache=True, windows=False, verbose=False, TENNIS_BALL_RADIUS_M = 0.0325
+    def __init__(self,
+                 model_path=MODEL_PATH,
+                 calibration_data_path=CALIB_MATRIX_PATH,
+                 collection_zone=(200, 150, 400, 350),
+                 camera_height=0,
+                 cache=True,
+                 windows=False,
+                 verbose=False,
+                 TENNIS_BALL_RADIUS_M = 0.0325
 
 ):
         """Initializes the TennisBallDetector.
@@ -155,7 +164,7 @@ class TennisBallDetectorHeight:
     def detect(self, frame, draw_collection_zone=True):
         """Detects the tennis ball and returns relevant distance and angle information using a single frame.
         Args:
-            frame: The frame to detect the tennis ball in.
+            frame: The frame to detect the tennis ball in. Needs to be RGB colour space (not BGR).
             draw_collection_zone (bool, optional): If True, draw the collection zone on the frame. Default is True.
         Returns:
             dict: A dictionary containing:
@@ -167,7 +176,7 @@ class TennisBallDetectorHeight:
         """
         # Base detection result with values needed for both verbose and non-verbose modes
         detection_result = {
-            "annotated_frame": cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
+            "annotated_frame": frame,
             "horizontal_distance": None,
             "in_collection_zone": False,
             "total_distance": None,
@@ -180,7 +189,11 @@ class TennisBallDetectorHeight:
             return detection_result
 
         undistorted_frame = self.undistort(frame)
-        results = self.model(undistorted_frame)  # Run inference
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*torch.cuda.amp.autocast.*is deprecated.*")
+            results = self.model(undistorted_frame)  # Run inference
         detections = results.xyxy[0].cpu().numpy()  # Get detections in numpy format
 
         if len(detections) > 0:
@@ -210,7 +223,7 @@ class TennisBallDetectorHeight:
                 cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 0, 255), 1)
 
             detection_result.update({
-                "annotated_frame": cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
+                "annotated_frame": frame,
                 "horizontal_distance": horizontal_distance,
                 "in_collection_zone": self.is_in_collection_zone(u, v),
                 "total_distance": total_distance,
