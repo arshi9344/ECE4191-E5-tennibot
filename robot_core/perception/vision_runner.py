@@ -1,4 +1,3 @@
-
 import time
 import traceback
 import numpy as np
@@ -21,7 +20,7 @@ from matplotlib import pyplot as plt
 from robot_core.utils.logging_utils import setup_logging
 from robot_core.coordinator.robot_states import RobotStates, VisionStates, StateWrapper
 from robot_core.utils.position import Position, PositionTypes
-from robot_core.perception.detection_results import BallDetection, BoxDetection, DetectionResult
+from robot_core.perception.detection_results import BallDetection, BoxDetection
 
 class VisionRunner(mp.Process):
     def __init__(
@@ -50,7 +49,6 @@ class VisionRunner(mp.Process):
 
         self.last_update = None
         self.detection_results_q = detection_results_q # shared queue, containing the latest detection results, read by ProcessCoordinator
-        # TODO: Add class instances here for TennisBallDetector and BoxDetector
         
         self.default_camera_idx = camera_idx
         self.camera = None
@@ -125,23 +123,55 @@ class VisionRunner(mp.Process):
                         ball_detections, ball_frame = self.ball_detector.detect(ball_frame)
                         box_detections, box_frame = self.box_detector.detect(box_frame)
 
-                        if ball_detections or box_detections:
+                        # Create lists to hold BallDetection and BoxDetection instances
+                        ball_detection_results = []
+                        box_detection_results = []
+
+                        # Process ball detections
+                        for detection in ball_detections:
+                            ball_detection = BallDetection(
+                                x=detection.x,
+                                y=detection.y,
+                                angle=detection.angle,
+                                total_distance=detection.total_distance,
+                                confidence=detection.confidence,
+                                in_collection_zone=detection.in_collection_zone
+                            )
+                            ball_detection_results.append(ball_detection)
+
+                        # Process box detections
+                        for detection in box_detections:
+                            box_detection = BoxDetection(
+                                x=detection.x,
+                                y=detection.y,
+                                angle=detection.angle,
+                                total_distance=detection.total_distance,
+                                confidence=detection.confidence,
+                                in_deposition_zone=detection.in_deposition_zone
+                            )
+                            box_detection_results.append(box_detection)
+
+                        # If there are any detections, put them into the queue
+                        if ball_detection_results or box_detection_results:
                             combined_frame = self.combine_frames(ball_frame, box_frame)
 
-                            
+                            # Put results in the queue
                             self.detection_results_q.put({
                                 'time': self.last_update,
-                                'frame': combined_frame, #  CHECK 
-                                'ball_detection': ball_detections,
-                                'box_detection': box_detections
+                                'frame': combined_frame,  # Combined frame with all annotations
+                                'ball_detection': ball_detection_results,  # List of BallDetection objects
+                                'box_detection': box_detection_results    # List of BoxDetection objects
                             })
+
                         else:
                             combined_frame = self.frame
 
+                        # Update the shared image
                         self.shared_image.update({
                             'time': self.last_update,
                             'frame': combined_frame
                         })
+
 
                         time.sleep(self.scanning_interval) # The only problem with this approach is that we always need to wait for the interval to pass, we can't immediately request an image
 
