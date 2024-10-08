@@ -32,6 +32,7 @@ class VisionRunner(mp.Process):
             detection_results_q,
             camera_idx,
             collection_zone=(200, 150, 400, 350),
+            deposition_zone=(200, 150, 400, 350),
             camera_height=0.02,
             log=False,
             scanning_interval=0.5,
@@ -50,10 +51,13 @@ class VisionRunner(mp.Process):
         self.last_update = None
         self.detection_results_q = detection_results_q # shared queue, containing the latest detection results, read by ProcessCoordinator
         # TODO: Add class instances here for TennisBallDetector and BoxDetector
+        
         self.default_camera_idx = camera_idx
         self.camera = None
+        self.camera_height = camera_height
         self.frame = None
         self.collection_zone = collection_zone
+        self.deposition_zone = deposition_zone
         self.simulate = use_simulated_video
 
         self.ball_detector = None
@@ -72,17 +76,20 @@ class VisionRunner(mp.Process):
         # calibration_data = np.load(npz_file_path)
         # camera_matrix = calibration_data['camera_matrix']
         # distortion_coeffs = calibration_data['dist_coeffs']
-        self.collection_zone = collection_zone # Define a region for collection, x_min, y_min, x_max, y_max
-        self.camera_height = camera_height  # Camera height in meters (2 cm)
+        
 
-
+    def combine_frames(self, ball_frame, box_frame):
+        combined_frame = ball_frame  # Use ball_frame as the base frame
+        combined_frame = cv2.addWeighted(ball_frame, 0.5, box_frame, 0.5, 0)
+        
+        return combined_frame
 
     def run(self):
         # Initialize the TennisBallDetector with camera height
         try:
             from robot_core.perception.vision_model.tennis_YOLO import TennisBallDetector, BoxDetector
-            self.ball_detector = TennisBallDetector(collection_zone= (200, 150, 400, 350))
-            self.box_detector = BoxDetector(deposition_zone=(200, 150, 400, 350))
+            self.ball_detector = TennisBallDetector(collection_zone= self.collection_zone)
+            self.box_detector = BoxDetector(deposition_zone=self.deposition_zone)
 
         except Exception:
             print(f"Error loading TennisBallDetector: {traceback.print_exc()}")
@@ -108,25 +115,32 @@ class VisionRunner(mp.Process):
                         else:
                             # print("VisionRunner: Image captured")
                             self.last_update = time.time()
+                        
+                        
+                        # Copy the original frame for each detector
+                        ball_frame = self.frame.copy()
+                        box_frame = self.frame.copy()
 
-                        # Run the detection
-                        detection = self.ball_detector.detect(self.frame)
+                        # Run the detection model
+                        ball_detections, ball_frame = self.ball_detector.detect(ball_frame)
+                        box_detections, box_frame = self.box_detector.detect(box_frame)
 
+                        if ball_detections or box_detections:
+                            combined_frame = self.combine_frames(ball_frame, box_frame)
 
-                        if detection.ball_detection or detection.box_detection is not None:
-                            frame = detection.frame
-                            detection_results_q.put({
+                            
+                            self.detection_results_q.put({
                                 'time': self.last_update,
-                                'frame': frame,
-                                'ball_detection': detection.ball_detection,
-                                'box_detection': detection.box_detection
+                                'frame': combined_frame, #  CHECK 
+                                'ball_detection': ball_detections,
+                                'box_detection': box_detections
                             })
                         else:
-                            frame = self.frame
+                            combined_frame = self.frame
 
                         self.shared_image.update({
                             'time': self.last_update,
-                            'frame': frame
+                            'frame': combined_frame
                         })
 
                         time.sleep(self.scanning_interval) # The only problem with this approach is that we always need to wait for the interval to pass, we can't immediately request an image
