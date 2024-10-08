@@ -16,16 +16,31 @@ from ultralytics import YOLO
 from robot_core.perception.detection_results import BallDetection, BoxDetection, DetectionResult
 
 # Define real tennis ball radius in meters (3.25 cm radius)
-MODEL_PATH = 'best.pt'
+MODEL_PATH = 'box_tennis.pt'
 CALIB_MATRIX_PATH = 'calib6_matrix.npz'
 
 class ObjectDetection:
-    def __init__(self, model, camera_matrix, distortion_coeffs, camera_height=0, verbose=False):
-        self.model = model
-        self.camera_matrix = camera_matrix
-        self.distortion_coeffs = distortion_coeffs
+    def __init__(self,
+                 model_path=MODEL_PATH,
+                 calibration_data_path=CALIB_MATRIX_PATH,
+                 camera_height=0,
+                 verbose=False,
+        ):
+
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        calibration_data_path = os.path.join(current_dir, calibration_data_path)
+        model_path = os.path.join(current_dir, model_path)
+
+
+        calibration_data = np.load(calibration_data_path)
+        self.camera_matrix = calibration_data['camera_matrix']
+        self.distortion_coeffs = calibration_data['dist_coeffs']
+        self.model = YOLO(model_path)
+
+
         self.camera_height = camera_height
         self.verbose = verbose
+
         self.class_id_to_name = self.model.names  # Mapping class IDs to names
         self.logger = logging.getLogger(__name__)
 
@@ -75,6 +90,10 @@ class ObjectDetection:
                                   confidence: float, in_zone: bool):
         """To be implemented by subclasses to create appropriate detection instances."""
         raise NotImplementedError("Subclasses must implement create_detection_instance method.")
+
+    def get_zone(self, class_name: str):
+        """To be implemented by subclasses to provide object-specific zones."""
+        raise NotImplementedError("Subclasses must implement get_zone method.")
 
     def detect(self, frame: np.ndarray, draw_zones=True):
         if frame is None:
@@ -143,9 +162,10 @@ class ObjectDetection:
 class TennisBallDetector(ObjectDetection):
     TENNIS_BALL_RADIUS_M = 0.0325
 
-    def __init__(self, model, camera_matrix, distortion_coeffs, collection_zone, camera_height=0, verbose=False):
-        super().__init__(model, camera_matrix, distortion_coeffs, camera_height, verbose)
+    def __init__(self, collection_zone, TENNIS_BALL_RADIUS_M=0.0325):
         self.collection_zone = collection_zone
+        self.TENNIS_BALL_RADIUS_M = TENNIS_BALL_RADIUS_M
+        super().__init__()
 
     def get_object_radius(self, class_name: str):
         return self.TENNIS_BALL_RADIUS_M if class_name == 'tennis-ball' else None
@@ -167,11 +187,12 @@ class TennisBallDetector(ObjectDetection):
 
 
 class BoxDetector(ObjectDetection):
-    BOX_SIZE_M = 0.16  # assume 16 cm height for the box
 
-    def __init__(self, model, camera_matrix, distortion_coeffs, deposition_zone, camera_height=0, verbose=False):
-        super().__init__(model, camera_matrix, distortion_coeffs, camera_height, verbose)
+    def __init__(self, deposition_zone, BOX_SIZE_M=0.16):
+        self.BOX_SIZE_M = BOX_SIZE_M  # assume 16 cm height for the box
         self.deposition_zone = deposition_zone
+
+        super().__init__()
 
     def get_object_radius(self, class_name: str):
         return self.BOX_SIZE_M / 2 if class_name == 'box' else None
