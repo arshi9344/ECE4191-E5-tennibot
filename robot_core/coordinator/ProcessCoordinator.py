@@ -136,6 +136,23 @@ class Coordinator:
         if self.live_graphs: self.plotter.stop()
         if self.log: self.log_listener.stop()
 
+
+    def estimate_ball_global_position(self, detection):
+
+        # Estimate the global position using the robot's current pose and the detection's relative position
+        robot_x = self.robot_pose['x']
+        robot_y = self.robot_pose['y']
+        robot_th = self.robot_pose['th']
+
+        dx = detection.x
+        dy = detection.y
+        cos_th = np.cos(robot_th)
+        sin_th = np.sin(robot_th)
+        gx = robot_x + dx * cos_th - dy * sin_th
+        gy = robot_y + dx * sin_th + dy * cos_th
+        return gx, gy
+    
+    
     def run(self):
         self.start() # Starting Orchestrator and VisionRunner
 
@@ -152,11 +169,40 @@ class Coordinator:
                 # our occupancy map / DecisionMaker class here.
 
 
+               # Check if there are new detection results in the queue
+                if not self.detection_results_q.empty():
+                    detection_result = self.detection_results_q.get()
+
+                    # If we have a ball detection, estimate the ball's global position and set it as the goal
+                    if detection_result['ball_detection']:
+                        ball_detection = detection_result['ball_detection'][0]  # Assume one ball detection
+
+                        # Estimate the global position of the ball using the robot's pose
+                        gx, gy = self.estimate_ball_global_position(ball_detection)
+
+                        # Set the goal as the global position of the ball
+                        self.goal_position['goal'] = Position(gx, gy, 0, PositionTypes.ROBOT)
+                        self.goal_position['time'] = time.time()
+                        self.logger.info(f"New goal set to ball position: {gx}, {gy}")
+
+                    # Otherwise, if no ball was detected, continue scanning the next point
+                    else:
+                        if self.curr_scan_point < len(self.scan_points):
+                            next_scan_point = self.scan_points[self.curr_scan_point]
+                            self.goal_position['goal'] = Position(next_scan_point.x, next_scan_point.y, 0, PositionTypes.ROBOT)
+                            self.goal_position['time'] = time.time()
+                            self.logger.info(f"Moving to scan point: {next_scan_point.x}, {next_scan_point.y}")
+                            self.curr_scan_point += 1
+                        else:
+                            # If all scan points are visited, reset to the first scan point
+                            self.curr_scan_point = 0
+
                 # print(self.shared_data['robot_state'])
 
                 # time.sleep(5)
 
-                # Graphing
+                # Graphings
+                self.plot()
                 # self.logger.info("Coordinator is running")
                 # sleep(0.1)
 
