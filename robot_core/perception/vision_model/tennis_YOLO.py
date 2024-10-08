@@ -3,7 +3,6 @@ import numpy as np
 import torch
 import math
 import pathlib
-from pathlib import Path
 import os
 
 from IPython.display import display as ipy_display, clear_output
@@ -11,9 +10,8 @@ import matplotlib.pyplot as plt
 import time
 import sys
 import logging
+from ultralytics import YOLO
 
-import sys
-sys.path.insert(0, '../vision_model')
 
 from robot_core.perception.detection_results import BallDetection, BoxDetection, DetectionResult
 
@@ -21,227 +19,176 @@ from robot_core.perception.detection_results import BallDetection, BoxDetection,
 MODEL_PATH = 'best.pt'
 CALIB_MATRIX_PATH = 'calib6_matrix.npz'
 
-
-class TennisBallDetectorHeight:
-    """Detect tennis balls and calculate distances and angles relative to the camera.
-
-    This class uses a YOLO model for detecting tennis balls and calculates the horizontal
-    distance, total distance, and angle relative to the camera for robot steering purposes.
-    Optionally, frames can be shown, and verbose output can be enabled.
-    """
-
-    def __init__(self,
-                 model_path=MODEL_PATH,
-                 calibration_data_path=CALIB_MATRIX_PATH,
-                 collection_zone=(200, 150, 400, 350),
-                 camera_height=0,
-                 cache=True,
-                 windows=False,
-                 verbose=False,
-                 TENNIS_BALL_RADIUS_M = 0.0325
-
-):
-        """Initializes the TennisBallDetector.
-
-        Args:
-            model_path (str): Path to the trained YOLO model.
-            camera_matrix (np.ndarray, optional): Camera matrix from calibration. Default is None.
-            distortion_coeffs (np.ndarray, optional): Distortion coefficients from calibration. Default is None.
-            collection_zone (tuple, optional): A tuple defining the region for collection (x_min, y_min, x_max, y_max). Default is None.
-            camera_height (float, optional): Height of the camera from the ground (in meters). Default is 0.
-            cache (bool, optional): If True, cache the YOLO model. Default is True.
-            windows (bool, optional): If True, adapts for Windows OS path handling. Default is False.
-            verbose (bool, optional): If True, print additional details during detection (e.g., vertical distance). Default is False.
-        """
-        if windows:
-            pathlib.PosixPath = pathlib.WindowsPath
-
-        # Set the path to the model
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        calibration_data_path = os.path.join(current_dir, calibration_data_path)
-        model_path = os.path.join(current_dir, model_path)
-
-        # # Load YOLO model based on caching preference
-        # # Load the YOLO model and calibration data
-        # current_dir = Path(__file__).parent  # Get the directory of the current script
-        # # Construct the path to the .npz file
-        # custom_cache_dir = str(current_dir / 'cache')
-        # # Set the custom cache directory
-        # os.environ['TORCH_HOME'] = custom_cache_dir
-
-
-
-        if cache:
-            self.model = torch.hub.load('ultralytics/yolov5', 'custom', path=model_path, trust_repo=True)
-        else:
-            self.model = torch.hub.load('ultralytics/yolov5', 'custom', path=model_path, force_reload=True)
-
-        calibration_data = np.load(calibration_data_path)
-        self.camera_matrix = calibration_data['camera_matrix']
-        self.distortion_coeffs = calibration_data['dist_coeffs']
-        self.collection_zone = collection_zone
+class ObjectDetection:
+    def __init__(self, model, camera_matrix, distortion_coeffs, camera_height=0, verbose=False):
+        self.model = model
+        self.camera_matrix = camera_matrix
+        self.distortion_coeffs = distortion_coeffs
         self.camera_height = camera_height
         self.verbose = verbose
-        self.TENNIS_BALL_RADIUS_M = TENNIS_BALL_RADIUS_M
+        self.class_id_to_name = self.model.names  # Mapping class IDs to names
+        self.logger = logging.getLogger(__name__)
 
-    def undistort(self, frame):
-        """Undistorts the image using the camera matrix and distortion coefficients.
-
-        Args:
-            frame (np.ndarray): The distorted input frame.
-
-        Returns:
-            np.ndarray: The undistorted frame.
-        """
+    def undistort(self, frame: np.ndarray) -> np.ndarray:
+        """Undistorts the image using the camera matrix and distortion coefficients."""
         if self.camera_matrix is not None and self.distortion_coeffs is not None:
             return cv2.undistort(frame, self.camera_matrix, self.distortion_coeffs)
         return frame
 
-    def calculate_distance(self, u, v, r_px):
-        """Calculates the total and horizontal distance to the tennis ball, as well as the angle.
-
-        Args:
-            u (float): The x-coordinate of the detected object (in pixels).
-            v (float): The y-coordinate of the detected object (in pixels).
-            r_px (float): The detected radius of the object (in pixels).
-
-        Returns:
-            tuple: A tuple containing:
-                - horizontal_distance (float): The straight-line distance along the x-y plane (ignoring z-height) to the ball in meters.
-                - total_distance (float): The total straight-line distance along the x-y-z plane to the ball in meters.
-                - angle (float): The angle to the ball along the x-y plane (ignoring z-height) in radians.
-        """
+    def calculate_distance(self, u: float, v: float, r_px: float, object_radius: float):
+        """Calculates horizontal and total distance to the object."""
         if r_px == 0:
-            print("Error: Detected radius is zero, cannot calculate distance.")
+            self.logger.error("Detected radius is zero, cannot calculate distance.")
             return None, None, None
 
         fx = self.camera_matrix[0, 0]  # Focal length in x direction
         cx = self.camera_matrix[0, 2]  # Principal point x-coordinate
 
-        total_distance = fx * self.TENNIS_BALL_RADIUS_M / r_px
+        total_distance = fx * object_radius / r_px
 
         if self.camera_height > 0:
             horizontal_distance = math.sqrt(max(total_distance ** 2 - self.camera_height ** 2, 0))
         else:
             horizontal_distance = total_distance
 
-        y = (u - cx) * (self.TENNIS_BALL_RADIUS_M / r_px)
+        y = (u - cx) * (object_radius / r_px)
 
-        angle = math.asin(y / horizontal_distance) if horizontal_distance != 0 else 0
-
-        # Calculate the x and y position of the ball relative to the camera in meters, with 0,0 being the camera position
-
+        angle = math.atan2(y, horizontal_distance) if horizontal_distance != 0 else 0
         return horizontal_distance, total_distance, angle
 
-    def polar_to_cartesian(self, horizontal_distance, angle):
-        """Converts polar coordinates (horizontal distance, angle) to Cartesian coordinates (x, y).
-
-        Args:
-            horizontal_distance (float): The horizontal distance from the camera to the object in meters.
-            angle (float): The angle to the object in radians.
-
-        Returns:
-            tuple: A tuple containing the x and y coordinates in meters.
-        """
+    def polar_to_cartesian(self, horizontal_distance: float, angle: float) -> tuple:
+        """Converts polar coordinates (horizontal distance, angle) to Cartesian coordinates (x, y)."""
         x = horizontal_distance * math.cos(angle)
         y = horizontal_distance * math.sin(angle)
         return x, y
 
-    def is_in_collection_zone(self, u, v):
-        """Checks if the given coordinates are within the collection zone.
+    def is_in_zone(self, u: float, v: float, zone: tuple) -> bool:
+        """Check if a detection is within the defined zone (e.g., collection zone or deposition zone)."""
+        x_min, y_min, x_max, y_max = zone
+        return x_min <= u <= x_max and y_min <= v <= y_max
 
-        Args:
-            u (float): The x-coordinate in pixels.
-            v (float): The y-coordinate in pixels.
+    def get_object_radius(self, class_name: str):
+        """To be implemented by subclasses to provide object-specific radii."""
+        raise NotImplementedError("Subclasses must implement get_object_radius method.")
 
-        Returns:
-            bool: True if within the collection zone, False otherwise.
-        """
-        if self.collection_zone:
-            x_min, y_min, x_max, y_max = self.collection_zone
-            return x_min <= u <= x_max and y_min <= v <= y_max
-        return False
+    def create_detection_instance(self, class_name: str, x: float, y: float, angle: float, total_distance: float,
+                                  confidence: float, in_zone: bool):
+        """To be implemented by subclasses to create appropriate detection instances."""
+        raise NotImplementedError("Subclasses must implement create_detection_instance method.")
 
-    def detect(self, frame, draw_collection_zone=True) -> DetectionResult:
-        """Detects the tennis ball and returns relevant distance and angle information using a single frame.
-        Args:
-            frame: The frame to detect the tennis ball in. Needs to be RGB colour space (not BGR).
-            draw_collection_zone (bool, optional): If True, draw the collection zone on the frame. Default is True.
-        Returns:
-            dict: A dictionary containing:
-                - 'horizontal_distance' (float): The horizontal distance to the ball in meters.
-                - 'total_distance' (float, optional): The total distance to the ball in meters (only when verbose=True).
-                - 'angle' (float, optional): The horizontal angle to the ball in radians (only when verbose=True).
-                - 'cartesian_coords' (tuple): Cartesian coordinates (x, y) based on the horizontal distance and angle.
-                - 'in_collection_zone' (bool): True if the ball is within the collection zone, False otherwise.
-        """
-        # Base detection result with values needed for both verbose and non-verbose modes
-        detection_result = DetectionResult(
-            box_detection=None,
-            ball_detection=None
-        )
+    def detect(self, frame: np.ndarray, draw_zones=True):
         if frame is None:
-            print(f"Error: Frame is None")
-            return detection_result
+            self.logger.error("Frame is None")
+            return [], frame
 
         undistorted_frame = self.undistort(frame)
-        import warnings
+        results = self.model(undistorted_frame)  # Run inference
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message=".*torch.cuda.amp.autocast.*is deprecated.*")
-            results = self.model(undistorted_frame)  # Run inference
-        detections = results.xyxy[0].cpu().numpy()  # Get detections in numpy format
+        detections = []
 
-        if len(detections) > 0:
-            # TODO: Return results for all the balls that are detected, not just the first (biggest) one in the list
-            x1, y1, x2, y2, confidence, class_id = detections[0]
+        # Process each result (batch of images)
+        for result in results:
+            boxes = result.boxes
+            if boxes is None:
+                continue
+            boxes_data = boxes.data.cpu().numpy()  # Each box: [x1, y1, x2, y2, confidence, class_id]
+            for box in boxes_data:
+                x1, y1, x2, y2, confidence, class_id = box
+                class_id = int(class_id)
+                class_name = self.class_id_to_name.get(class_id, 'unknown')
 
-            # Calculate center (u, v) and radius in pixels
-            u = (x1 + x2) / 2
-            v = (y1 + y2) / 2
-            r_px = (x2 - x1) / 2
+                # Calculate center (u, v) and radius in pixels
+                u = (x1 + x2) / 2
+                v = (y1 + y2) / 2
+                r_px = (x2 - x1) / 2  # Approximate radius
 
-            horizontal_distance, total_distance, angle = self.calculate_distance(u, v, r_px)
+                object_radius = self.get_object_radius(class_name)
+                if object_radius is None:
+                    # Skip objects that we don't have radius information for
+                    continue
 
-            # Convert to Cartesian coordinates (x, y) based on horizontal distance and angle
-            x, y = self.polar_to_cartesian(horizontal_distance, angle)
+                horizontal_distance, total_distance, angle = self.calculate_distance(u, v, r_px, object_radius)
+                x, y = self.polar_to_cartesian(horizontal_distance, angle)
 
-            # Add tennis ball bounding box and labels to frame
-            for index, obj in results.pandas().xyxy[0].iterrows():
-                x_min, y_min = int(obj['xmin']), int(obj['ymin'])
-                x_max, y_max = int(obj['xmax']), int(obj['ymax'])
-                cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-                label = f"{obj['name']} {obj['confidence']:.2f}"
-                cv2.putText(frame, label, (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                in_zone = self.is_in_zone(u, v, self.get_zone(class_name))
 
-            if draw_collection_zone:
-                x_min, y_min, x_max, y_max = self.collection_zone
-                cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 0, 255), 1)
+                # Draw bounding box and labels on the frame
+                cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+                label = f"{class_name} {confidence:.2f}"
+                cv2.putText(frame, label, (int(x1), int(y1) - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-            ball_result = BallDetection(
-                x=x,
-                y=y,
-                angle=angle,
-                total_distance=total_distance,
-                confidence=confidence,
-                frame=frame,
-                in_collection_zone=self.is_in_collection_zone(u, v)
+                detection_instance = self.create_detection_instance(class_name, x, y, angle, total_distance, confidence, in_zone)
+                if detection_instance:
+                    detections.append(detection_instance)
 
-            )
-            detection_result.ball_detection = ball_result
-            if self.verbose:
-                # Verbose output
-                print(f"Horizontal Distance: {horizontal_distance:.2f} meters")
-                print(f"Total Distance: {total_distance:.2f} meters")
-                print(f"Angle: {math.degrees(angle):.2f} degrees")
-                print(f"Cartesian Coordinates: (x: {x:.2f} meters, y: {y:.2f} meters)")
-                print(f"In Collection Zone: {detection_result['in_collection_zone']}")
-                if self.camera_height > 0:
-                    print(f"Camera Height: {self.camera_height} meters")
-                    print(f"Vertical Distance: {self.camera_height} meters (from floor)")
+        if draw_zones:
+            self.draw_zones(frame)
+
+        if self.verbose:
+            self.print_detections(detections)
+
+        return detections, frame
+
+    def draw_zones(self, frame: np.ndarray):
+        """To be implemented by subclasses if they have zones to draw."""
+        pass
+
+    def print_detections(self, detections: list):
+        """Prints detailed information about detections."""
+        for detection in detections:
+            print(f"{detection}")
 
 
-        else:
-            print("No detections found.")
+class TennisBallDetector(ObjectDetection):
+    TENNIS_BALL_RADIUS_M = 0.0325
 
-        return detection_result
+    def __init__(self, model, camera_matrix, distortion_coeffs, collection_zone, camera_height=0, verbose=False):
+        super().__init__(model, camera_matrix, distortion_coeffs, camera_height, verbose)
+        self.collection_zone = collection_zone
+
+    def get_object_radius(self, class_name: str):
+        return self.TENNIS_BALL_RADIUS_M if class_name == 'tennis-ball' else None
+
+    def get_zone(self, class_name: str):
+        return self.collection_zone if class_name == 'tennis-ball' else None
+
+    def create_detection_instance(self, class_name: str, x: float, y: float, angle: float, total_distance: float,
+                                  confidence: float, in_zone: bool):
+        if class_name != 'tennis-ball':
+            return None
+        return BallDetection(
+            x=x, y=y, angle=angle, total_distance=total_distance, confidence=confidence, in_collection_zone=in_zone
+        )
+
+    def draw_zones(self, frame: np.ndarray):
+        x_min, y_min, x_max, y_max = self.collection_zone
+        cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 0, 255), 1)
+
+
+class BoxDetector(ObjectDetection):
+    BOX_SIZE_M = 0.16  # assume 16 cm height for the box
+
+    def __init__(self, model, camera_matrix, distortion_coeffs, deposition_zone, camera_height=0, verbose=False):
+        super().__init__(model, camera_matrix, distortion_coeffs, camera_height, verbose)
+        self.deposition_zone = deposition_zone
+
+    def get_object_radius(self, class_name: str):
+        return self.BOX_SIZE_M / 2 if class_name == 'box' else None
+
+    def get_zone(self, class_name: str):
+        return self.deposition_zone if class_name == 'box' else None
+
+    def create_detection_instance(self, class_name: str, x: float, y: float, angle: float, total_distance: float,
+                                  confidence: float, in_zone: bool):
+        if class_name != 'box':
+            return None
+        return BoxDetection(
+            x=x, y=y, angle=angle, total_distance=total_distance, confidence=confidence, in_deposition_zone=in_zone
+        )
+
+    def draw_zones(self, frame: np.ndarray):
+        x_min, y_min, x_max, y_max = self.deposition_zone
+        cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (255, 0, 0), 1)
+
+
