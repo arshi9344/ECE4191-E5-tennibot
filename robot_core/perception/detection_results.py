@@ -2,9 +2,9 @@ from dataclasses import dataclass
 from typing import List, Optional, Any
 @dataclass
 class BallDetection:
-    x: float
-    y: float
-    angle: float
+    x: float # +X is in FRONT
+    y: float # +Y is to the RIGHT
+    angle: float # Radians, anticlockwise is positive, angle from X axis
     total_distance: float
     confidence: float
     in_collection_zone: bool
@@ -20,7 +20,7 @@ class BoxDetection:
     angle: float
     total_distance: float
     confidence: float
-    in_deposition_zone: bool  # if needed 
+    in_deposition_zone: bool  # if needed
 
     @property
     def coords(self):

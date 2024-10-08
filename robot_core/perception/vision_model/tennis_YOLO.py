@@ -18,26 +18,24 @@ from robot_core.perception.detection_results import BallDetection, BoxDetection,
 # Define real tennis ball radius in meters (3.25 cm radius)
 MODEL_PATH = 'box_tennis.pt'
 CALIB_MATRIX_PATH = 'calib6_matrix.npz'
+current_dir = os.path.dirname(os.path.abspath(__file__))
+calibration_data_path = os.path.join(current_dir, CALIB_MATRIX_PATH)
+model_path = os.path.join(current_dir, MODEL_PATH)
+
+calibration_data = np.load(calibration_data_path)
+model = YOLO(model_path)
+
 
 class ObjectDetection:
     def __init__(self,
-                 model_path=MODEL_PATH,
-                 calibration_data_path=CALIB_MATRIX_PATH,
+                 model=model,
+                 calibration_data=calibration_data,
                  camera_height=0,
                  verbose=False,
         ):
-
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        calibration_data_path = os.path.join(current_dir, calibration_data_path)
-        model_path = os.path.join(current_dir, model_path)
-
-
-        calibration_data = np.load(calibration_data_path)
         self.camera_matrix = calibration_data['camera_matrix']
         self.distortion_coeffs = calibration_data['dist_coeffs']
-        self.model = YOLO(model_path)
-
-
+        self.model = model
         self.camera_height = camera_height
         self.verbose = verbose
 
