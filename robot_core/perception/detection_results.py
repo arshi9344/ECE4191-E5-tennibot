@@ -26,8 +26,8 @@ class BoxDetection:
     def coords(self):
         return self.x, self.y, self.angle
     
-@dataclass
-class DetectionResult:
-    box_detection: Optional[List[BoxDetection]]  # None if no box is detected
-    ball_detection: Optional[List[BallDetection]]  # None if no tennis ball is detected
-    frame: Any  # The frame with bounding boxes and annotations   
+# @dataclass
+# class DetectionResult:
+#     box_detection: Optional[List[BoxDetection]]  # None if no box is detected
+#     ball_detection: Optional[List[BallDetection]]  # None if no tennis ball is detected
+#     frame: Any  # The frame with bounding boxes and annotations

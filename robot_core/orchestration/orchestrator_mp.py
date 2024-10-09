@@ -1,4 +1,3 @@
-
 import time
 import numpy as np
 import json
@@ -20,7 +19,7 @@ from robot_core.motion.tentacle_planner import TentaclePlanner
 from robot_core.utils.logging_utils import setup_logging
 from robot_core.utils.robot_log_point import RobotLogPoint
 from robot_core.orchestration.scan_point_utils import ScanPointGenerator
-from robot_core.coordinator.robot_states import RobotStates
+from robot_core.coordinator.commands import RobotCommands
 from robot_core.utils.position import Position, PositionTypes
 # from robot_core.perception.ultrasonic_sensors import UltrasonicSensor # moved import inside the Orchestrator.run() method
 """
@@ -51,21 +50,21 @@ class Orchestrator(mp.Process):
         print(f"Logger handlers: {self.logger.handlers}")
         print(f"Logger parent: {self.logger.parent}")
 
-        self.shared_data = shared_data # Shared data like robot pose (updated by orchestrator) and also motion state (read by orchestrator)
-        self.goal_position = goal_position # Dict, Consumed (read) by Orchestrator to adjust robot's pose
-        self.robot_pose = robot_pose # Updated by Orchestrator
-        self.robot_graph_data = robot_graph_data # Updated by Orchestrator
+        self.shared_data = shared_data  # Shared data like robot pose (updated by orchestrator) and also motion state (read by orchestrator)
+        self.goal_position = goal_position  # Dict, Consumed (read) by Orchestrator to adjust robot's pose
+        self.robot_pose = robot_pose  # Updated by Orchestrator
+        self.robot_graph_data = robot_graph_data  # Updated by Orchestrator
 
         self.last_update = None
         self.start_time = None
-        self.simulated_robot : bool = simulated_robot # boolean
+        self.simulated_robot: bool = simulated_robot  # boolean
         self.debug = debug
         # Initialising subcomponents (robot, controller, planner)
         self.logger.info(f"Initialising Orchestrator:")
         self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
         # print(f"Process ID: {os.getpid()} - Running worker: {self.name}")
         if not dt:
-            self.dt = 0.1 # Everything runs at 0.1s. The TentaclePlanner and PIController are also run at this interval.
+            self.dt = 0.1  # Everything runs at 0.1s. The TentaclePlanner and PIController are also run at this interval.
         else:
             self.dt = dt
         self.logger.info(f"    Using dt={self.dt}")
@@ -75,18 +74,16 @@ class Orchestrator(mp.Process):
         self.ultrasonic = None
         self.servo = None
 
-
-
         if not controller:
-            self.controller = PIController(real_time=True) # Default
+            self.controller = PIController(real_time=True)  # Default
         else:
             self.controller = controller
         controller_default = 'default' if controller else 'supplied'
-        self.logger.info(f"    Initialised {controller_default} controller: Kp: {self.controller.Kp:.2f}, Ki: {self.controller.Ki:.2f}")
-
+        self.logger.info(
+            f"    Initialised {controller_default} controller: Kp: {self.controller.Kp:.2f}, Ki: {self.controller.Ki:.2f}")
 
         if not planner:
-            self.planner = TentaclePlanner() # Default
+            self.planner = TentaclePlanner()  # Default
         else:
             self.planner = planner
         planner_default = 'default' if planner else 'supplied'
@@ -113,12 +110,11 @@ class Orchestrator(mp.Process):
         self.last_update = now
         return dt
 
-
     def movement(self, x, y, th):
         # Calculate control outputs (robot base linear and angular velocities) using the planner
         inputs = self.planner.get_control_inputs(x, y, th, *self.robot.pose, strategy='tentacles')
         # Calculate the duty cycles for the left and right wheels using the controller
-        linear_vel, angular_vel  = inputs['linear_velocity'], inputs['angular_velocity']
+        linear_vel, angular_vel = inputs['linear_velocity'], inputs['angular_velocity']
         goal_reached = inputs['goal_reached']
         # if goal_reached: print(f"Goal reached! x:{goal.x}, y:{goal.y}, th:{goal.th}")
 
@@ -152,15 +148,15 @@ class Orchestrator(mp.Process):
 
             # Initialise Robot and Ultrasonic sensors
             if not self.simulated_robot:
-                    reality = 'real'
-                    from robot_core.hardware.diff_drive_robot import DiffDriveRobot
-                    self.robot = DiffDriveRobot(0.03, real_time=True)
+                reality = 'real'
+                from robot_core.hardware.diff_drive_robot import DiffDriveRobot
+                self.robot = DiffDriveRobot(0.03, real_time=True)
 
-                    from robot_core.perception.ultrasonic_sensors import UltrasonicSensor
-                    self.ultrasonic = UltrasonicSensor(num_samples=20)
+                from robot_core.perception.ultrasonic_sensors import UltrasonicSensor
+                self.ultrasonic = UltrasonicSensor(num_samples=20)
 
-                    from robot_core.hardware.servo_controller import ServoController
-                    self.servo = ServoController()
+                from robot_core.hardware.servo_controller import ServoController
+                self.servo = ServoController()
             else:
                 reality = 'simulated'
                 from robot_core.hardware.simulated_diff_drive_robot import DiffDriveRobot
@@ -171,18 +167,10 @@ class Orchestrator(mp.Process):
             while self.shared_data['running']:
                 # self.logger.setLevel(logging.DEBUG)  # or logging.INFO
                 # print(f"Orchestrator running. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
+                seee = self.shared_data['robot_command'].get()
+                print(f'INSIDE: {seee}')
 
-                if self.shared_data['robot_state'].get() == RobotStates.STOP:
-                    self.robot.set_motor_speed(0, 0)
-                    self.log_data(
-                        0,
-                        0,
-                        0,
-                        0,
-                        Position(None, None, None, PositionTypes.ROBOT)
-                    )
-
-                elif self.shared_data['robot_state'].get() == RobotStates.SEARCH:
+                if self.shared_data['robot_command'].get() == RobotCommands.DRIVE:
                     # Get the robot's goal position from the shared goal_position queue
                     goal = self.get_latest_goal(goal)
                     res = self.movement(goal.x, goal.y, goal.th)
@@ -195,24 +183,8 @@ class Orchestrator(mp.Process):
                         goal
                     )
 
-                elif self.shared_data['robot_state'].get() == RobotStates.COLLECT:
-                    # Move towards the collection point
-                    goal = self.get_latest_goal(goal)
-                    res = self.movement(goal.x, goal.y, goal.th)
-                    goal_reached = res['goal_reached']
-                    
-                    if goal_reached:
-                        # Stop the robot and collect the object
-                        self.robot.set_motor_speed(0, 0)
-                        self.servo.stamp()  # Activate the collection mechanism
-                        # TODO: Add logic to check if the object has been collected using vision data
-                        # the stamping box is 8 inches away, and the second side of the box 14 inches away
-
-
-                elif self.shared_data['robot_state'].get() == RobotStates.DEPOSIT:
-                    # We're now depositing the balls, so insert servo control logic here
+                elif self.shared_data['robot_command'].get() == RobotCommands.STOP:
                     self.robot.set_motor_speed(0, 0)
-                    self.servo.deposit()
                     self.log_data(
                         0,
                         0,
@@ -221,27 +193,56 @@ class Orchestrator(mp.Process):
                         Position(None, None, None, PositionTypes.ROBOT)
                     )
 
-                elif self.shared_data['robot_state'].get() == RobotStates.ALIGN:
-                    # This should be run after the box has been detected, now aligning the robot via ultrasonic sensors
-#                     self.robot.set_motor_speed(0, 0)
+                elif self.shared_data['robot_command'].get() == RobotCommands.COLLECT:
+                    #                     # Move towards the collection point
+                    #                     goal = self.get_latest_goal(goal)
+                    #                     res = self.movement(goal.x, goal.y, goal.th)
+                    #                     goal_reached = res['goal_reached']
 
+                    #                     if goal_reached:
+                    # Stop the robot and collect the object
+                    self.robot.set_motor_speed(0, 0)
+                    self.servo.stamp()  # Activate the collection mechanism
+                    print("here")
+
+
+
+                elif self.shared_data['robot_command'].get() == RobotCommands.DEPOSIT:
+                    # We're now depositing the balls, so insert servo control logic here
+                    self.robot.set_motor_speed(0, 0)
+                    self.servo.deposit()
+                    print("here2")
+                    self.log_data(
+                        0,
+                        0,
+                        0,
+                        0,
+                        Position(None, None, None, PositionTypes.ROBOT)
+                    )
+
+                elif self.shared_data['robot_command'].get() == RobotCommands.ALIGN:
+                    # This should be run after the box has been detected, now aligning the robot via ultrasonic sensors
+                    #                     self.robot.set_motor_speed(0, 0)
+                    print("inside")
 
                     # Once in desired location to begin scanning the drop off box
                     check_return = self.ultrasonic.check_alignment(depot_distance_threshold=15, alignment_tolerance=1.2)
+                    print(f'woop: {check_return}')
                     if check_return[0] == 'distance':
                         # Drive set distance in a straight line
                         distance = check_return[1]
-                        self.robot.set_motor_speed(1,1)
+                        print(distance)
+                        # self.robot.set_motor_speed(1,1)
 
                     elif check_return[0] == 'rotate':
                         # Rotate on the spot by the desired angle
                         angle_rad = check_return[1]
-                        self.movement(self.robot.x,self.robot.y,self.robot.th + angle_rad )
+                        print(angle_rad)
+                        # self.movement(self.robot.x,self.robot.y,self.robot.th + angle_rad )
 
                     elif check_return == 'arrived':
                         # In the robot state queue, notify the queue itself that the object has been processed
-                            pass
-
+                        pass
 
                     self.log_data(
                         0,
@@ -250,9 +251,6 @@ class Orchestrator(mp.Process):
                         0,
                         Position(None, None, None, PositionTypes.ROBOT)
                     )
-
-
-
 
                 # print(self.robot_graph_data[-1])
                 # print(json.dumps(data))
@@ -265,8 +263,10 @@ class Orchestrator(mp.Process):
                 })
 
                 # Sleep for 0.1s before the next iteration
-                if not self.simulated_robot: time.sleep(self.dt)
-                else: time.sleep(self.dt/20)
+                if not self.simulated_robot:
+                    time.sleep(self.dt)
+                else:
+                    time.sleep(self.dt / 20)
 
             # We only reach this point if the shared_data['running'] flag is False
             self.logger.info("Orchestrator stopping, running Flag is false")
@@ -279,7 +279,7 @@ class Orchestrator(mp.Process):
             self.logger.info("Keyboard interrupt. Stopping robot.")
 
         except Exception as e:
-            self.logger.error(f"Error in Orchestrator, Stopping robot: {traceback.print_exc()}")
+            self.logger.error(f"Error in Orchestrator, Stopping robot: {e}")
         if self.robot is not None and not self.simulated_robot:
             self.robot.set_motor_speed(0, 0)
         return

@@ -19,7 +19,7 @@ from pathlib import Path
 from matplotlib import pyplot as plt
 
 from robot_core.utils.logging_utils import setup_logging
-from robot_core.coordinator.robot_states import RobotStates, VisionStates, StateWrapper
+from robot_core.coordinator.commands import RobotCommands, VisionCommands, StateWrapper
 from robot_core.utils.position import Position, PositionTypes
 from robot_core.perception.detection_results import BallDetection, BoxDetection, DetectionResult
 
@@ -105,7 +105,7 @@ class VisionRunner(mp.Process):
 
             try:
                 while self.shared_data['running']:
-                    if self.shared_data['vision_state'].get() != VisionStates.NONE:
+                    if self.shared_data['vision_command'].get() != VisionCommands.NONE:
                         ret, self.frame = self.camera.read() # capture image
                         self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
 
@@ -190,8 +190,8 @@ if __name__ == '__main__':
     manager = mp.Manager()
     shared_data = {
         'running': True,
-        'vision_state': StateWrapper(manager, VisionStates, VisionStates.DETECT_BALL),
-        'robot_state': StateWrapper(manager, RobotStates, RobotStates.SEARCH)
+        'vision_command': StateWrapper(manager, VisionCommands, VisionCommands.DETECT_BALL),
+        'robot_command': StateWrapper(manager, RobotCommands, RobotCommands.DRIVE)
     }
     detection_results_q = manager.Queue()
 

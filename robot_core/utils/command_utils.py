@@ -2,7 +2,7 @@ import multiprocessing as mp
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
-from robot_core.coordinator.robot_states import RobotStates
+from robot_core.coordinator.commands import RobotCommands
 
 
 class CommandStatus(Enum):
@@ -14,7 +14,7 @@ class CommandStatus(Enum):
 @dataclass
 class Command:
     id: int
-    data: RobotStates
+    data: RobotCommands
     status: CommandStatus
 
 class StatefulCommandQueue:
@@ -23,7 +23,7 @@ class StatefulCommandQueue:
         self.command_map = manager.dict()
         self.command_id_counter = manager.Value('i', 0)
 
-    def put(self, command_data: RobotStates):
+    def put(self, command_data: RobotCommands):
         self.command_id_counter.value += 1
         command_id = self.command_id_counter.value
         command = Command(
@@ -35,7 +35,7 @@ class StatefulCommandQueue:
         self.command_map[command_id] = command
         return command_id
 
-    def get(self) -> Optional[RobotStates]:
+    def get(self) -> Optional[RobotCommands]:
         if self.queue:
             command = self.queue.pop(0)
             command.status = CommandStatus.PROCESSING
@@ -80,7 +80,7 @@ if __name__ == "__main__":
 
     def producer(queue):
         for _ in range(10):
-            new_state = random.choice(list(RobotStates))
+            new_state = random.choice(list(RobotCommands))
             cmd_id = queue.put(new_state)
             print(f"Producer: Added command with id {cmd_id}, state: {new_state.name}")
             time.sleep(0.5)

@@ -50,7 +50,7 @@ class FrameCaptureProcess(mp.Process):
         print("FrameCaptureProcess: Camera opened successfully")
 
         while self.shared_data['running']:
-            if self.shared_data['vision_state'].get() != VisionStates.NONE:
+            if self.shared_data['vision_command'].get() != VisionStates.NONE:
                 ret, frame = cap.read()
                 if not ret:
                     print("Failed to grab frame")
@@ -81,7 +81,7 @@ def update_plot(frame, ax, frame_queue, shared_data):
             img = frame_queue.get_nowait()
             ax.clear()
             ax.imshow(img)
-            ax.set_title(f"Vision State: {shared_data['vision_state'].get().name}")
+            ax.set_title(f"Vision Command: {shared_data['vision_command'].get().name}")
             ax.axis('off')
         except mp.queues.Empty:
             pass
@@ -93,13 +93,13 @@ def on_key_press(event, shared_data):
         shared_data['running'] = False
         plt.close('all')
     elif event.key == 'b':
-        shared_data['vision_state'].set(VisionStates.DETECT_BALL)
+        shared_data['vision_command'].set(VisionStates.DETECT_BALL)
         print("Switched to ball detection mode")
     elif event.key == 'x':
-        shared_data['vision_state'].set(VisionStates.DETECT_BOX)
+        shared_data['vision_command'].set(VisionStates.DETECT_BOX)
         print("Switched to box detection mode")
     elif event.key == 'n':
-        shared_data['vision_state'].set(VisionStates.NONE)
+        shared_data['vision_command'].set(VisionStates.NONE)
         print("Switched to no detection mode")
 
 
@@ -108,8 +108,8 @@ if __name__ == "__main__":
     frame_queue = mp.Queue(maxsize=2)
     shared_data = {
         'running': True,
-        'vision_state': StateWrapper(manager, VisionStates, VisionStates.DETECT_BALL),
-        'robot_state': StateWrapper(manager, RobotStates, RobotStates.STOP)
+        'vision_command': StateWrapper(manager, VisionStates, VisionStates.DETECT_BALL),
+        'robot_command': StateWrapper(manager, RobotStates, RobotStates.STOP)
     }
 
     capture_process = FrameCaptureProcess(frame_queue, shared_data)

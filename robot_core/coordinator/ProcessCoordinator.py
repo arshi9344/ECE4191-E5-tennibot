@@ -9,7 +9,7 @@ from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 from robot_core.hardware.diff_drive_robot import DiffDriveRobot
 from robot_core.motion.tentacle_planner import TentaclePlanner
 from robot_core.control.PI_controller import PIController
-from robot_core.coordinator.robot_states import RobotStates, StateWrapper, VisionStates
+from robot_core.coordinator.commands import RobotCommands, StateWrapper, VisionCommands
 from robot_core.orchestration.scan_point_utils import ScanPointGenerator, ScanPoint
 from robot_core.orchestration.orchestrator_mp import Orchestrator
 from robot_core.perception.vision_runner import VisionRunner
@@ -44,8 +44,8 @@ class Coordinator:
         self.manager = Manager()
         self.shared_data = {
             'running': self.manager.Value('b', True),
-            'robot_state': StateWrapper(self.manager, RobotStates, RobotStates.STOP),
-            'vision_state': StateWrapper(self.manager, VisionStates, VisionStates.NONE),
+            'robot_command': StateWrapper(self.manager, RobotCommands, RobotCommands.STOP),
+            'vision_command': StateWrapper(self.manager, VisionCommands, VisionCommands.NONE),
             'command_queue': StatefulCommandQueue(self.manager),
         }
         self.robot_pose = self.manager.dict({'x': 0, 'y': 0, 'th': 0})
@@ -142,9 +142,9 @@ class Coordinator:
         self.start() # Starting Orchestrator and VisionRunner
 
         # Setting initial states for Orchestrator and VisionRunner.
-        self.shared_data['robot_state'].set(RobotStates.SEARCH)
+        self.shared_data['robot_command'].set(RobotCommands.DRIVE)
         # VisionRunner will constantly take pictures every 5 seconds and run it through the ML model. Results will be published to the self.detection_results_q
-        self.shared_data['vision_state'].set(VisionStates.DETECT_BALL)
+        self.shared_data['vision_command'].set(VisionCommands.DETECT_BALL)
 
         # start with curr_scan_point = 0, prev_scan_point = None
         try:
@@ -154,7 +154,7 @@ class Coordinator:
                 # our occupancy map / DecisionMaker class here.
 
 
-                # print(self.shared_data['robot_state'])
+                # print(self.shared_data['robot_command'])
 
                 # time.sleep(5)
 

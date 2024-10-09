@@ -1,13 +1,17 @@
 from enum import Enum, auto
 
-class RobotStates(Enum):
+class RobotCommands(Enum):
     STOP = 0
-    SEARCH = 1 #
-    COLLECT = 2 #
-    DEPOSIT = 3
-    ALIGN = 5
+    DRIVE = 1 #
+    STAMP = 2 #
+    ALIGN = 3
+    DEPOSIT = 4
+    ROTATE = 5 # for rotational scan
 
-class VisionStates(Enum):
+
+
+
+class VisionCommands(Enum):
     NONE = 0
     DETECT_BALL = 1
     DETECT_BOX = 2

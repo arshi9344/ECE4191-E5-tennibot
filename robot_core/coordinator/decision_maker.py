@@ -1,14 +1,26 @@
+from enum import Enum
+from transitions import Machine
+from dataclasses import dataclass
 import time
-import numpy as np
-import math
-from scipy.spatial import KDTree
-from typing import List, Optional, Any, Tuple
+
 from robot_core.utils.position import Position, PositionTypes
 from robot_core.orchestration.scan_point_utils import ScanPoint, ScanPointGenerator
 from robot_core.perception.detection_results import BallDetection, BoxDetection, DetectionResult
 from robot_core.hardware.dimensions import COURT_XLIM, COURT_YLIM
-from robot_core.coordinator.robot_states import RobotStates, StateWrapper, VisionStates
+from robot_core.coordinator.commands import RobotCommands, StateWrapper, VisionCommands
 from robot_core.utils.command_utils import StatefulCommandQueue, Command, CommandStatus
+import enum
+
+class RobotStates(Enum):
+    IDLE = 0 # Doing nothing
+    DRIVE_TO_BALL = 1 # implemented
+    DRIVE_TO_DEPOSIT = 2
+    DRIVE_TO_SCAN_POINT = 3 # Exploring the court.
+    ROTATE_SCAN = 4
+
+    STAMP = 5
+    ALIGN = 6
+    DEPOSIT = 7
 
 class DecisionMaker:
     def __init__(
@@ -17,223 +29,192 @@ class DecisionMaker:
             goal_position,
             detection_results_q,
             shared_data,
-            collection_box_location,
-            quadrant_bounds=(0, COURT_XLIM, 0, COURT_YLIM),
-            max_capacity=5,
-            deposit_time=8*60,
-            ASSOCIATION_THRESHOLD = 0.4
+            occupancy_map, # shared object instantiated inside ProcessCoordinator
+            deposit_time_limit=8*60,
+            max_capacity=4,
+            collection_box_location=(0, 0)
     ):
-
-        # Shared multiprocessing.manager variables
+        # Shared multiprocessing manager variables
         self.robot_pose = robot_pose  # Shared dict with robot's current pose {'x': x, 'y': y, 'th': th}
         self.goal_position = goal_position  # Shared dict for the goal position
         self.detection_results_q = detection_results_q  # Shared queue with the latest detection results
         self.shared_data = shared_data # Shared dict with the latest detection results
         self.command_queue = shared_data['command_queue']  # Shared command queue
 
-        # Constants
-        self.max_capacity = max_capacity  # Maximum number of balls the robot can carry
-        self.quadrant_bounds = quadrant_bounds  # (xmin, xmax, ymin, ymax)
-        self.collection_box_location = collection_box_location  # (x, y) # not used for now
-        self.ASSOCIATION_THRESHOLD = ASSOCIATION_THRESHOLD  # Maximum distance to associate a detection with a known ball
+        # Shared ProcessCoordinator variables (these are plain old lists, dicts, not mp.manager objects)
+        self.occupancy_map = occupancy_map  # Shared list for the occupancy map
 
-        # Our 'occupancy grid' for the balls and other state variables
-        self.occupancy_map = []  # List of known balls positions [(x, y), ...]
-        self.collected_balls = 0  # Number of balls currently collected
-        self.last_issued_command_id = None
-        # F
-        # self.state = 'SEARCH'  # Can be 'SEARCH', 'COLLECT', 'DEPOSIT', 'ALIGN'
-        # self.current_goal = None  # The current goal position (x, y)
-        self.search_points = []  # List of points to search
-        self.current_search_index = 0
-        self.start_time = time.time()
-        self.deposit_time = deposit_time  # Time in seconds after which to deposit
-        self.last_deposit_time = self.start_time
-        self.initialise_search_points()
+        # Parameters
+        self.max_capacity = max_capacity
+        self.deposit_time_limit = deposit_time_limit  # Example value: 5 minutes
+        self.collection_box_location = collection_box_location
 
-    def initialise_search_points(self):
-        # These are an example of the points we get from ScanPointGenerator
-        # Point: (2.0, -2.0).Limited?: False, Rotation: (0, 0),
-        # Point: (4.0, -2.0).Limited?: False, Rotation: (0, 0),
-        # Point: (4.0, -4.0).Limited?: False, Rotation: (0, 0),
-        # Point: (2.0, -4.0).Limited?: False, Rotation: (0, 0)]
-        max_scan_distance = 2
-        flip_x = False
-        flip_y = True
-        # Generate scan points and lines
-        scan_gen = ScanPointGenerator(scan_radius=max_scan_distance, flip_x=flip_x, flip_y=flip_y)
-        self.search_points = scan_gen.points
+        # Other things to keep track of state
+        self.collected_balls = 0
+        self.last_deposit_time = time.time()
+        self.current_ball_stamp_attempts = 0
+        self.current_ball_position = None
 
 
-    def update_ball_detections(self, detections: List[BallDetection]):
-        # Update the list of known balls
-        for detection in detections:
-            # Estimate the global position of the ball
-            ball_global_position = self._estimate_ball_global_position(detection)
-            # Add the ball if it's within bounds and not already in the list
-            if self._is_within_bounds(*ball_global_position):
-                self._associate_ball(*ball_global_position)
+        # Define states and transitions
+        states = [
 
-    def _associate_ball(self, detected_x, detected_y):
-        for ball in self.occupancy_map:
-            distance = math.hypot(ball['x'] - detected_x, ball['y'] - detected_y)
-            if distance < self.ASSOCIATION_THRESHOLD:
-                # Update the existing ball position
-                ball['x'] = detected_x
-                ball['y'] = detected_y
-                return
-        # If no existing ball is close enough, add as a new ball
-        self.occupancy_map.append({'x': detected_x, 'y': detected_y})
+            {'name': RobotStates.IDLE},
+            {'name': RobotStates.DRIVE_TO_BALL, 'on_enter': 'set_goal_to_nearest_ball'}, # need to issue RobotCommands.DRIVE command
+            {'name': RobotStates.DRIVE_TO_DEPOSIT, 'on_enter': 'set_goal_to_deposit_box'}, # need to issue RobotCommands.DRIVE command
+            {'name': RobotStates.DRIVE_TO_SCAN_POINT, 'on_enter': 'set_goal_to_scan_point'}, # need to issue RobotCommands.DRIVE command
+            {'name': RobotStates.ROTATE_SCAN}, # need to issue RobotCommands.ROTATE command
+            {'name': RobotStates.STAMP, 'on_enter': 'start_stamping', 'on_exit': 'handle_stamp_completion'},  # need to issue RobotCommands.ROTATE command
+            {'name': RobotStates.ALIGN, 'on_enter': 'start_aligning', 'on_exit': ''},  # need to issue RobotCommands.ALIGN command
+            {'name': RobotStates.DEPOSIT, 'on_enter': 'start_depositing', 'on_exit': 'handle_deposit_completion'},  # need to issue RobotCommands.DEPOSIT command
 
-    def remove_collected_ball(self, collected_x, collected_y):
-        for ball in self.occupancy_map:
-            distance = math.hypot(ball['x'] - collected_x, ball['y'] - collected_y)
-            if distance < self.ASSOCIATION_THRESHOLD:
-                self.occupancy_map.remove(ball)
-                break
+        ]
 
-    def _estimate_ball_global_position(self, detection: BallDetection):
+        transitions = [
+            ##### These are the transitions that determine the robot's next action based on its internal state ####
+            # Transitions for driving to a location
+            {
+                'trigger': 'decide_next_action',
+                'source': [RobotStates.DRIVE_TO_BALL, RobotStates.DRIVE_TO_SCAN_POINT, RobotStates.DEPOSIT, RobotStates.STAMP, RobotStates.IDLE],
+                'dest': RobotStates.DRIVE_TO_BALL,
+                'conditions': ['has_known_balls'], # needs to return True
+                'unless': ['should_return_to_deposit'] # needs to return False
+            },
+            {
+                'trigger': 'decide_next_action',
+                'source': [RobotStates.DRIVE_TO_DEPOSIT, RobotStates.DRIVE_TO_BALL, RobotStates.DRIVE_TO_SCAN_POINT, RobotStates.STAMP], # i.e. NOT DEPOSIT, ALIGN
+                'dest': RobotStates.DRIVE_TO_DEPOSIT,
+                'conditions': ['should_return_to_deposit'],
+            },
+            {
+                'trigger': 'decide_next_action',
+                'source': [RobotStates.DRIVE_TO_BALL, RobotStates.DRIVE_TO_SCAN_POINT, RobotStates.DEPOSIT, RobotStates.STAMP, RobotStates.IDLE],
+                'dest': RobotStates.DRIVE_TO_SCAN_POINT,
+                'conditions': [],
+                'unless': ['has_known_balls', 'should_return_to_deposit']
+            },
 
-        # Estimate the global position using the robot's current pose and the detection's relative position
-        robot_x = self.robot_pose['x']
-        robot_y = self.robot_pose['y']
-        robot_th = self.robot_pose['th']
+            # Transitions for performing an action (stamp, align, deposit)
+            {
+                'trigger': 'decide_next_action',
+                'source': RobotStates.DRIVE_TO_BALL,
+                'dest': RobotStates.STAMP,
+                'conditions': ['is_ball_in_front'],
+                'unless': ['should_return_to_deposit']
+            },
+            {
+                'trigger': 'decide_next_action',
+                'source': RobotStates.DRIVE_TO_DEPOSIT,
+                'dest': RobotStates.ALIGN,
+                'conditions': ['should_return_to_deposit','is_at_deposit_box'],
+            },
+            {
+                'trigger': 'decide_next_action',
+                'source': RobotStates.ALIGN,
+                'dest': RobotStates.DEPOSIT,
+            },
 
-        dx = detection.x
-        dy = detection.y
-        cos_th = np.cos(robot_th)
-        sin_th = np.sin(robot_th)
-        gx = robot_x + dx * cos_th - dy * sin_th
-        gy = robot_y + dx * sin_th + dy * cos_th
-        return gx, gy
+        ]
 
-    def _is_within_bounds(self, x, y):
-        xmin, xmax, ymin, ymax = self.quadrant_bounds
-        return xmin <= x <= xmax and ymin <= y <= ymax
-
-    def decide_next_action(self):
-        # Decide the robot's next action and update the goal position
-        current_time = time.time()
-        time_since_last_deposit = current_time - self.last_deposit_time
-
-        # Get the current command state
-
-        # STOP = 0
-        # SEARCH = 1  # essentially the same as drive
-        # COLLECT = 2  #
-        # DEPOSIT = 3
-        # ALIGN = 5
-
-        ### RETURN
-        if self.collected_balls >= self.max_capacity or time_since_last_deposit >= self.deposit_time:
-            # Need to return home to deposit balls
-            self._issue_command(RobotStates.DEPOSIT)
-            self._update_goal_position(
-                Position(self.collection_box_location[0], self.collection_box_location[1], 0, PositionTypes.BOX)
-            )
-            # Check if within threshold of box, if so, deposit balls
-
-            # Check computer vision data, see if box is detected, and navigate towards it
-            # need to insert additional logic here to detect box, navigate towards it, line up, and open teh door
-
-        ### DEPOSIT
-        # Same if condition as above, but check if the robot is aligned against the box
-        # if robot is at the deposit location:
-        #     deposit balls
-        #     self.collected_balls = 0
-        #     self.last_deposit_time = time.time()
-        #     self.shared_data['robot_state'].set(RobotStates.SEARCH)
-        #     self.current_goal = self.next_search_position()
-        #     self.update_goal_position(self.current_goal)
-        # else:
-        #     self.shared_data['robot_state'].set(RobotStates.RETURN)
-        #     self.current_goal = self.collection_box_location
-        #     self.update_goal_position(self.current_goal)
+        # Initialize the state machine
+        self.machine = Machine(model=self, states=states, transitions=transitions, initial=RobotStates.IDLE, after_state_change='after_state_change', before_state_change='before_state_change')
 
 
-        ### COLLECT, Position.type = PositionTypes.BALL
-        # KEEP BEING INSIDE COLLECT, UNTIL VISION NO LONGER SEES A BALL IN COLLECTION ZONE / OR BALL IS COLLECTED
-        # Orchestrator goes to the goal position, and then stamps once close enough
-        elif len(self.occupancy_map) > 0:
-            # There are known balls to collect
-            nearest_ball = self.find_nearest_ball()
-            angle = self._angle_between_points((self.robot_pose['x'], self.robot_pose['y']), nearest_ball)
+    def update(self):
+        """Main update called in ProcessCoordinator control loop."""
+        print(f'Updating. Current state: {self.state}')
+        self.update_sensor_data()
+        self.check_state_completion()
 
-            self._issue_command(RobotStates.COLLECT)
-            self._update_goal_position(
-                Position(*nearest_ball, angle, PositionTypes.BALL)
-            )
 
-        ### SEARCH, Position.type = PositionTypes.SCAN_POINT
+    def after_state_change(self):
+        # issue the command to the command queue
+        print(f"Current state: {self.state}")
+
+    def check_state_completion(self):
+        ### Actions to take when a state is completed, or still in progress.
+        if self.state == RobotStates.DRIVE_TO_BALL and self._is_drive_done():
+            self.handle_drive_completion()
+        elif self.state == RobotStates.STAMP and self._is_stamp_done():
+            self.handle_stamp_completion()
+        elif self.state == RobotStates.ALIGN and self._is_align_done():
+            self.handle_align_completion()
+        elif self.state == RobotStates.DEPOSIT and self._is_deposit_done():
+            self.handle_deposit_completion()
+        elif self.state == RobotStates.SEARCH and self._is_search_done():
+            self.handle_search_completion()
+
+    def update_sensor_data(self):
+        # Implement logic to handle external events or commands
+        # Don't need to pass perception data to occupancy map. That's done in ProcessCoordinator.
+        pass
+
+    def handle_drive_completion(self):
+        if self.goal_position.position_type == PositionTypes.BALL:
+            self.stamp()
+        elif self.goal_position.position_type == PositionTypes.BOX:
+            self.align()
         else:
-            # No known balls, continue searching
-            # TODO: need to check if previous command is finished or not
+            self.next_action()
 
-            next_scan_point = self.next_search_position()
-            angle = self._angle_between_points((self.robot_pose['x'], self.robot_pose['y']), next_scan_point)
-
-            self._issue_command(RobotStates.SEARCH)
-            self._update_goal_position(Position(
-                *next_scan_point, angle, PositionTypes.SCAN_POINT
-            ))
-
-            # rotate once at the scan point location
+    def handle_stamp_completion(self):
+        # If stamping is successful, increment the collected balls, AND remove from the occupancy map
+        self.collected_balls += 1
+        self.occupancy_map.remove_ball(self.current_ball_position)
 
 
+    # After depositing, reset the collected balls and update the last deposit time
+    def handle_deposit_completion(self):
+        self.collected_balls = 0
+        self.last_deposit_time = time.time()
 
 
-    def _update_goal_position(self, goal: Position):
-        # Update the shared goal_position dict
+
+    # Goal setting functions
+    def set_goal_to_scan_point(self):
         self.goal_position.update({
-            'goal': goal,
+            'goal': ScanPointGenerator.get_next_scan_point(self.curr_scan_point, self.prev_scan_point),
             'time': time.time()
         })
 
-    def _issue_command(self, command_data: RobotStates):
-        # Issue a command to the robot
-        self.last_issued_command_id = self.command_queue.put(command_data)
+    def set_goal_to_nearest_ball(self):
+        nearest_ball = self.occupancy_map.get_nearest_ball(self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['th'])
+        self.current_ball_position = nearest_ball
+        self.goal_position.update({
+            'goal': Position(*nearest_ball, 0, PositionTypes.BALL),
+            'time': time.time()
+        })
 
-    def _angle_between_points(self, p1, p2):
-        dx = p2[0] - p1[0]
-        dy = p2[1] - p1[1]
-        return np.arctan2(dy, dx)
+    def set_goal_to_deposit_box(self):
+        self.goal_position.update({
+            'goal': Position(*self.collection_box_location, 0, PositionTypes.BOX),
+            'time': time.time()
+        })
 
-    def find_nearest_ball(self) -> Tuple[float, float]:
-        # Find the nearest ball position to the robot
-        robot_x = self.robot_pose['x']
-        robot_y = self.robot_pose['y']
-        distances = [np.hypot(ball[0] - robot_x, ball[1] - robot_y) for ball in self.occupancy_map]
-        nearest_ball = self.occupancy_map[np.argmin(distances)]
-        return nearest_ball # x, y
+    ####### State checks, truth conditions #######
 
-    def next_search_position(self) -> Tuple[float, float]:
-        # Return the next point in the search_points list
-        if self.current_search_index >= len(self.search_points):
-            self.current_search_index = 0  # Loop back to the beginning
-        next_point = self.search_points[self.current_search_index]
-        self.current_search_index += 1
-        return next_point
+    # Returns True if occupancy map is not empty
+    def has_known_balls(self):
+        return not self.occupancy_map.is_empty()
 
-    def on_reach_goal(self):
-        # Called when the robot reaches its goal
-        if self.state == 'COLLECT':
-            # Assume the robot has collected the ball
-            self.collected_balls += 1
-            if self.current_goal in self.ball_positions:
-                self.ball_positions.remove(self.current_goal)
-        elif self.state == 'DEPOSIT':
-            # Assume the robot has deposited the balls
-            self.collected_balls = 0
-            self.last_deposit_time = time.time()
-        elif self.state == 'SEARCH':
-            # Reached a search point, do nothing
-            pass
+    # Returns True if robot should return to deposit box. Depends on time elapsed and capacity.
+    def should_return_to_deposit(self):
+        time_condition = time.time() - self.last_deposit_time > self.deposit_time_limit
+        capacity_condition = self.collected_balls >= self.max_capacity and self.collected_balls > 0
 
+        if time_condition or capacity_condition: return True
+        return False
 
-    def process(self):
-        # Called in each iteration
-        detections = self.detection_results_q.get_nowait()
-        if detections:
-            self.update_ball_detections(detections)
-            self.update_box_detection(detections)
-        self.decide_next_action()
+    def is_at_deposit_box(self):
+        # insert logic to check if robot is at deposit box. For now, just return True
+        pass
+
+    def is_ball_in_front(self):
+        # insert logic to check if ball is in front. For now, just return True
+        pass
+
+# Example usage
+robot = Robot()
+while True:
+    robot.update()
+    time.sleep(2)  # Add a small delay to prevent busy-waiting
