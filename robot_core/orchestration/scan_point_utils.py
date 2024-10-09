@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Circle
-
+from robot_core.hardware.dimensions import COURT_XLIM, COURT_YLIM
 
 
 class ScanPoint:
@@ -25,7 +25,7 @@ def _filter_array_inplace(arr, min_value, max_value):
 
 
 class ScanPointGenerator:
-    def __init__(self, x_lim=4.12, y_lim=5.48, scan_radius=2, flip_x: bool = False, flip_y: bool = False,):
+    def __init__(self, x_lim=COURT_XLIM, y_lim=COURT_YLIM, scan_radius=2, flip_x: bool = False, flip_y: bool = False,):
         self.x_lim = x_lim
         self.y_lim = y_lim
         self.scan_radius = scan_radius
@@ -52,12 +52,12 @@ class ScanPointGenerator:
             y_coords = -y_coords
 
         scans = []
-        for i, x in enumerate(x_coords):
+        for i, y in enumerate(y_coords):
             if i % 2 == 0:
-                for y in y_coords:
+                for x in x_coords:
                     scans.append(ScanPoint(x, y))
             else:
-                for y in y_coords[::-1]:
+                for x in x_coords[::-1]:
                     scans.append(ScanPoint(x, y))
 
         return scans
@@ -74,8 +74,9 @@ class ScanPointGenerator:
         ax.add_patch(rect)
 
         # Plot scan points and circles
-        for point in self.points:
+        for i, point in enumerate(self.points, start=1):
             ax.scatter(*point.coords, color='blue', s=30)
+            ax.annotate(str(i), point.coords, xytext=(5, 5), textcoords='offset points')
             circle = Circle(point.coords, self.scan_radius, fill=False, edgecolor='purple', alpha=0.5)
             ax.add_patch(circle)
 
@@ -100,13 +101,11 @@ class ScanPointGenerator:
 
 # # Parameters
 if __name__ == '__main__':
-    width = 4.12
-    depth = 5.48
     max_scan_distance = 2
-    flip_x = True
-    flip_y = False
+    flip_x = False
+    flip_y = True
     # Generate scan points and lines
-    scan_gen = ScanPointGenerator(width, depth, max_scan_distance, flip_x, flip_y)
+    scan_gen = ScanPointGenerator(scan_radius=max_scan_distance, flip_x=flip_x, flip_y=flip_y)
     print(scan_gen.points)
     # Plot the points
     scan_gen.plot_scan_points()

@@ -16,6 +16,7 @@ from robot_core.perception.vision_runner import VisionRunner
 from robot_core.utils.logging_utils import setup_logging, create_log_listener
 from robot_core.utils.robot_log_point import RobotLogPoint
 from robot_core.utils.position import Position, PositionTypes
+from robot_core.utils.command_utils import StatefulCommandQueue, Command, CommandStatus
 from robot_core.utils.robot_plotter import RobotPlotter
 import matplotlib.pyplot as plt
 import os
@@ -45,13 +46,14 @@ class Coordinator:
             'running': self.manager.Value('b', True),
             'robot_state': StateWrapper(self.manager, RobotStates, RobotStates.STOP),
             'vision_state': StateWrapper(self.manager, VisionStates, VisionStates.NONE),
+            'command_queue': StatefulCommandQueue(self.manager),
         }
         self.robot_pose = self.manager.dict({'x': 0, 'y': 0, 'th': 0})
         self.goal_position = self.manager.dict({
             'goal': Position(0,0,0,PositionTypes.ROBOT), # Goal should be a Position object from robot_core.utils.position
             'time': None  # The time that the goal is set
         })
-        self.detection_results_q = self.manager.Queue(-1) # Queue for detection results from VisionRunner
+        self.detection_results_q = self.manager.Queue() # Queue for detection results from VisionRunner
 
         """
         mini-explainer for the goal_position Queue:

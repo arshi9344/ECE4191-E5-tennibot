@@ -1,12 +1,11 @@
 from enum import Enum, auto
 
 class RobotStates(Enum):
-    SEARCH = 1
-    COLLECT = 2
-    RETURN = 3
-    DEPOSIT = 4
-    STOP = 5
-    ALIGN = 6
+    STOP = 0
+    SEARCH = 1 #
+    COLLECT = 2 #
+    DEPOSIT = 3
+    ALIGN = 5
 
 class VisionStates(Enum):
     NONE = 0
@@ -26,3 +25,4 @@ class StateWrapper:
 
     def get(self):
         return self._stateEnum(self._value.value)
+

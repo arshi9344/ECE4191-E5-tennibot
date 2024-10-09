@@ -172,10 +172,19 @@ class Orchestrator(mp.Process):
                 # self.logger.setLevel(logging.DEBUG)  # or logging.INFO
                 # print(f"Orchestrator running. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
 
-                if self.shared_data['robot_state'].get() == RobotStates.SEARCH:
+                if self.shared_data['robot_state'].get() == RobotStates.STOP:
+                    self.robot.set_motor_speed(0, 0)
+                    self.log_data(
+                        0,
+                        0,
+                        0,
+                        0,
+                        Position(None, None, None, PositionTypes.ROBOT)
+                    )
+
+                elif self.shared_data['robot_state'].get() == RobotStates.SEARCH:
                     # Get the robot's goal position from the shared goal_position queue
                     goal = self.get_latest_goal(goal)
-
                     res = self.movement(goal.x, goal.y, goal.th)
 
                     self.log_data(
@@ -184,16 +193,6 @@ class Orchestrator(mp.Process):
                         res['duty_cycle_l'],
                         res['duty_cycle_r'],
                         goal
-                    )
-
-                elif self.shared_data['robot_state'].get() == RobotStates.STOP:
-                    self.robot.set_motor_speed(0, 0)
-                    self.log_data(
-                        0,
-                        0,
-                        0,
-                        0,
-                        Position(None, None, None, PositionTypes.ROBOT)
                     )
 
                 elif self.shared_data['robot_state'].get() == RobotStates.COLLECT:
@@ -206,7 +205,8 @@ class Orchestrator(mp.Process):
                         # Stop the robot and collect the object
                         self.robot.set_motor_speed(0, 0)
                         self.servo.stamp()  # Activate the collection mechanism
-
+                        # TODO: Add logic to check if the object has been collected using vision data
+                        # the stamping box is 8 inches away, and the second side of the box 14 inches away
 
 
                 elif self.shared_data['robot_state'].get() == RobotStates.DEPOSIT:
