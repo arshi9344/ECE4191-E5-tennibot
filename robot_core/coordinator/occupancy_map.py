@@ -39,35 +39,19 @@ class OccupancyMap:
 
         # Our 'occupancy grid' for the balls and other state variables
         self.occupancy_map = []  # List of known balls positions [(x, y), ...]
-        self.search_points = []  # List of points to search
-        self.current_search_index = 0
         self.start_time = time.time()
-        self.initialise_search_points()
-
-    def initialise_search_points(self):
-        # These are an example of the points we get from ScanPointGenerator
-        # Point: (2.0, -2.0).Limited?: False, Rotation: (0, 0),
-        # Point: (4.0, -2.0).Limited?: False, Rotation: (0, 0),
-        # Point: (4.0, -4.0).Limited?: False, Rotation: (0, 0),
-        # Point: (2.0, -4.0).Limited?: False, Rotation: (0, 0)]
-        max_scan_distance = 2
-        flip_x = False
-        flip_y = True
-        # Generate scan points and lines
-        scan_gen = ScanPointGenerator(scan_radius=max_scan_distance, flip_x=flip_x, flip_y=flip_y)
-        self.search_points = scan_gen.points
 
 
     def update_ball_detections(self, detections: List[BallDetection]):
         # Update the list of known balls
         for detection in detections:
             # Estimate the global position of the ball
-            ball_global_position = self._estimate_ball_global_position(detection)
             # Add the ball if it's within bounds and not already in the list
-            if self._is_within_bounds(*ball_global_position):
-                self._associate_ball(*ball_global_position)
+            if self._is_within_bounds(detection):
+                self._associate_ball(detection)
 
-    def _associate_ball(self, detected_x, detected_y):
+    def _associate_ball(self, detection: BallDetection):
+        detected_x, detected_y = detection.x, detection.y
         for ball in self.occupancy_map:
             distance = math.hypot(ball['x'] - detected_x, ball['y'] - detected_y)
             if distance < self.ASSOCIATION_THRESHOLD:
@@ -100,7 +84,8 @@ class OccupancyMap:
     #     gy = robot_y + dx * sin_th + dy * cos_th
     #     return gx, gy
 
-    def _is_within_bounds(self, x, y):
+    def _is_within_bounds(self, detection: BallDetection):
+        x, y = detection.x, detection.y
         xmin, xmax, ymin, ymax = self.quadrant_bounds
         return xmin <= x <= xmax and ymin <= y <= ymax
 
@@ -111,20 +96,9 @@ class OccupancyMap:
     #     dy = p2[1] - p1[1]
     #     return np.arctan2(dy, dx)
 
-    def find_nearest_ball(self) -> Tuple[float, float]:
+    def find_nearest_ball(self, robot_x, robot_y) -> Tuple[float, float]:
         # Find the nearest ball position to the robot
-        robot_x = self.robot_pose['x']
-        robot_y = self.robot_pose['y']
         distances = [np.hypot(ball[0] - robot_x, ball[1] - robot_y) for ball in self.occupancy_map]
         nearest_ball = self.occupancy_map[np.argmin(distances)]
         return nearest_ball # x, y
-
-    def next_search_position(self) -> Tuple[float, float]:
-        # Return the next point in the search_points list
-        if self.current_search_index >= len(self.search_points):
-            self.current_search_index = 0  # Loop back to the beginning
-        next_point = self.search_points[self.current_search_index]
-        self.current_search_index += 1
-        return next_point
-
 
