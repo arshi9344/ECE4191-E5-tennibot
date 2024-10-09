@@ -12,12 +12,12 @@ from robot_core.utils.command_utils import StatefulCommandQueue, Command, Comman
 
 
 """"
--  add_ball_coords(ball_detection_results): Take in x y coords of a ball, and then update the occupancy map in whatever way (add, or refine existing, or do nothing if outside quadrant bounds)
-    - use _estimate_ball_global_position() to translate camera coords into robot coords
+-  add_ball_coords(ball_detection_results: List[BallDetection]): Take in x y coords of a ball, and then update the occupancy map in whatever way (add, or refine existing, or do nothing if outside quadrant bounds)
     - ball_detection_results is a list of BallDetection objects (from perception/detection_results.py)
     
-- get_nearest_ball(x_robot,y_robot,th_robot) returns the nearest ball to the robot
-- returns the nearest ball to the robot
+- remove_ball(): remove a ball from the occupancy map. Potentially you could give each ball a unique id so you only have to supply the id, and not the x,y coords to remove it (so that you can remove a ball that has moved)
+- get_nearest_ball(): returns the nearest ball to the robot. x, y
+- is_empty(): returns True if there are no balls in the occupancy map
 
 
 """
