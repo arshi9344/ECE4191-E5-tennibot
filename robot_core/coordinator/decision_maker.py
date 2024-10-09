@@ -131,7 +131,7 @@ class DecisionMaker:
 
     def update(self):
         """Main update called in ProcessCoordinator control loop."""
-        print(f'Updating. Current state: {self.state}')
+        print(f'Updating. State before update (AKA what doing now): {self.state}')
         self._refresh_ball_goal() # this is to update the ball goal position to the nearest ball using most recent perception data
         self._check_command_completion()
         self.decide_next_action() # method added by the state machine at runtime
@@ -159,7 +159,7 @@ class DecisionMaker:
             case RobotStates.IDLE:
                 self.curr_command_id = self.command_queue.put(RobotCommands.STOP)
 
-        print(f"Current state: {self.state}, command_id: {self.curr_command_id}")
+        print(f"New state: {self.state}, issued command_id: {self.curr_command_id}")
 
 
     # Check if the last issued A.K.A current command is completed or still processing.
@@ -179,7 +179,7 @@ class DecisionMaker:
                 return_val = False
             print(f"{self.command_queue.get_data(self.curr_command_id)} (id: {self.curr_command_id}) is {status}")
         else:
-            print(f"No current command")
+            print(f"No previous command")
 
         return return_val
 
