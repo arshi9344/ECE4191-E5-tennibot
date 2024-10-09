@@ -121,7 +121,26 @@ class DecisionMaker:
                 'source': [RobotStates.DRIVE_TO_SCAN_POINT, RobotStates.STAMP],
                 'dest': RobotStates.ROTATE_SCAN,
                 'conditions': ['_check_command_completion'] #
-            }
+            },
+
+            ##### manual transitions for testing #####
+            # IDLE = 0  # Doing nothing
+            # DRIVE_TO_BALL = 1  # implemented
+            # DRIVE_TO_DEPOSIT_BOX = 2
+            # DRIVE_TO_SCAN_POINT = 3  # Exploring the court.
+            # ROTATE_SCAN = 4
+            #
+            # STAMP = 5
+            # ALIGN = 6
+            # DEPOSIT = 7
+            {'trigger': 'manual_idle', 'source': '*', 'dest': RobotStates.IDLE },
+            {'trigger': 'manual_drive_to_ball', 'source': '*', 'dest': RobotStates.DRIVE_TO_BALL},
+            {'trigger': 'manual_drive_to_deposit_box', 'source': '*', 'dest': RobotStates.DRIVE_TO_DEPOSIT_BOX},
+            {'trigger': 'manual_drive_to_scan_point', 'source': '*', 'dest': RobotStates.DRIVE_TO_SCAN_POINT},
+            {'trigger': 'manual_rotate_scan', 'source': '*', 'dest': RobotStates.ROTATE_SCAN},
+            {'trigger': 'manual_stamp', 'source': '*', 'dest': RobotStates.STAMP},
+            {'trigger': 'manual_align', 'source': '*', 'dest': RobotStates.ALIGN},
+            {'trigger': 'manual_deposit', 'source': '*', 'dest': RobotStates.DEPOSIT},
 
         ]
 

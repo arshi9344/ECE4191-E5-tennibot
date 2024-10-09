@@ -174,8 +174,27 @@ class Coordinator:
                 self.occupancy_map.update(detection_results.get(['ball_detection']))
                 # TODO: DO something with the box detection results here as well
 
+
                 # Update the decision_maker and have it issue a new state
                 self.decision_maker.update()
+
+                # Also, the cool thing about using the decision_maker is that if we want to directly control the robot
+                # and manually transition to a new state for testing / teleoperation purposes, just uncomment the self.decision_maker.update() line
+                # as this stops the decision_maker from updating state transitions automatically, and instead just use one of:
+                # {'trigger': 'manual_idle', 'source': '*', 'dest': RobotStates.IDLE},
+                # {'trigger': 'manual_drive_to_ball', 'source': '*', 'dest': RobotStates.DRIVE_TO_BALL},
+                # {'trigger': 'manual_drive_to_deposit_box', 'source': '*', 'dest': RobotStates.DRIVE_TO_DEPOSIT_BOX},
+                # {'trigger': 'manual_drive_to_scan_point', 'source': '*', 'dest': RobotStates.DRIVE_TO_SCAN_POINT},
+                # {'trigger': 'manual_rotate_scan', 'source': '*', 'dest': RobotStates.ROTATE_SCAN},
+                # {'trigger': 'manual_stamp', 'source': '*', 'dest': RobotStates.STAMP},
+                # {'trigger': 'manual_align', 'source': '*', 'dest': RobotStates.ALIGN},
+                # {'trigger': 'manual_deposit', 'source': '*', 'dest': RobotStates.DEPOSIT},
+
+                # e.g., just call:
+                # self.decision_maker.manual_drive_to_ball() will change state to RobotStates.DRIVE_TO_BALL, issue a RobotCommand.DRIVE, and update the goal position to the nearest ball in the occupancy map
+                # self.manual_stamp will operate the stamping mechanism by issuing a RobotCommand.STAMP command
+                # self.manual_deposit will operate the deposit mechanism by issuing a RobotCommand.DEPOSIT command
+                # etc.
 
                 self.plot()
                 time.sleep(0.01)
