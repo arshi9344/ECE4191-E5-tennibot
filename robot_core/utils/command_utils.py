@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 from robot_core.coordinator.commands import RobotCommands
-
+import time
 
 class CommandStatus(Enum):
     QUEUED = 0
@@ -16,25 +16,35 @@ class Command:
     id: int
     data: RobotCommands
     status: CommandStatus
+    issue_time: float
 
 class StatefulCommandQueue:
     def __init__(self, manager: mp.Manager):
+        self.MAX_QUEUE_SIZE = 2
         self.queue = manager.list()
         self.command_map = manager.dict()
         self.command_id_counter = manager.Value('i', 0)
+        self.most_recent_issued_command = None
 
+    # Main method for adding commands to the queue. Use put when issuing commands to robot.
     def put(self, command_data: RobotCommands):
+        if len(self.queue) >= self.MAX_QUEUE_SIZE:
+            raise ValueError(f"Command queue full, MAX_QUEUE_SIZE reached ({self.MAX_QUEUE_SIZE})")
+
         self.command_id_counter.value += 1
         command_id = self.command_id_counter.value
         command = Command(
             id=command_id,
             data=command_data,
-            status=CommandStatus.QUEUED
+            status=CommandStatus.QUEUED,
+            issue_time=time.time()
         )
         self.queue.append(command)
         self.command_map[command_id] = command
+        self.most_recent_issued_command = command
         return command_id
 
+    # Main method for getting commands to the queue. Use get when getting commands.
     def get(self) -> Optional[RobotCommands]:
         if self.queue:
             command = self.queue.pop(0)
@@ -43,31 +53,53 @@ class StatefulCommandQueue:
             return command.data
         return None
 
+    # Mark a command as done, using a command id.
     def mark_done(self, command_id: int):
         if command_id in self.command_map:
             self.command_map[command_id].status = CommandStatus.DONE
 
+    # Mark a command as failed, using a command id.
     def mark_failed(self, command_id: int):
         if command_id in self.command_map:
             self.command_map[command_id].status = CommandStatus.FAILED
 
+    # Get the status of a command using the id.
     def get_status(self, command_id: int) -> Optional[CommandStatus]:
         if command_id in self.command_map:
             return CommandStatus(self.command_map[command_id].status)
         return None
 
+    # Get the data of a previously issued command.
+    def get_data(self, command_id: int) -> Optional[RobotCommands]:
+        if command_id in self.command_map:
+            return self.command_map[command_id].data
+        return None
+
+    # Get all commands that are processing
     def get_processing_commands(self):
         return [cmd for cmd in self.command_map.values() if cmd.status == CommandStatus.PROCESSING]
 
+    # Get all commands that are completed
     def remove_completed(self):
         self.command_map = {cmd_id: cmd for cmd_id, cmd in self.command_map.items()
                             if CommandStatus(cmd.status) != CommandStatus.DONE}
+
+    # Remove all commands in queue. Shouldn't really neeed to use this, only here in case.
     def remove_all(self):
         del self.queue[:]
         self.command_map.update({})
 
+    # Get the last issued command. Shouldn't really need this.
+    def last_issued(self) -> int:
+        if self.most_recent_issued_command is None:
+            return -1
+        return self.most_recent_issued_command
+
     def __len__(self):
         return len(self.queue)
+
+    def empty(self):
+        return len(self.queue) == 0
 
 
 

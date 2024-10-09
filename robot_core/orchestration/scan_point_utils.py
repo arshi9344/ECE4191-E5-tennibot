@@ -32,6 +32,7 @@ class ScanPointGenerator:
         self.flip_x = flip_x
         self.flip_y = flip_y
         self.points = self.generate_scan_points(x_lim, y_lim, scan_radius, flip_x, flip_y)
+        self.current_point = None
 
 
     def generate_scan_points(self, x_lim, y_lim, scan_radius, flip_x=False, flip_y=False, remove_points_on_boundary=True):
@@ -61,6 +62,16 @@ class ScanPointGenerator:
                     scans.append(ScanPoint(x, y))
 
         return scans
+
+    def get_next_scan_point(self) -> ScanPoint:
+        if self.current_point is None:
+            self.current_point = 0
+        else:
+            self.current_point += 1
+
+        if self.current_point >= len(self.points):
+            self.current_point = 0
+        return self.points[self.current_point]
 
     def plot_scan_points(self, ax=None):
         width = self.x_lim if not self.flip_x else -self.x_lim
