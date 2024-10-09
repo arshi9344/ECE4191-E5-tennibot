@@ -16,7 +16,7 @@ from robot_core.utils.robot_log_point import RobotLogPoint
 NOTES:
 - Because matplotlib is blocking and also not thread-safe, we need to create a separate thread for plotting so that if we plot lots of data, it doesn't slow down the main thread
     - this is important because slowing the main thread down in Coordinator can cause the robot to not respond to commands in time, not move as expected, and not react as quickly to new data
-- The RobotPlotter class uses a queue to pass data to the plotting thread, which then allows us to plot data in real-time with minimal impact on the main thread
+- The RobotPlotter class uses a cmd_queue to pass data to the plotting thread, which then allows us to plot data in real-time with minimal impact on the main thread
 """
 
 class RobotPlotter:
@@ -25,7 +25,7 @@ class RobotPlotter:
         self.start_time = None
         self.last_plotted_time = 0
         self.last_image_time = 0
-        self.data_queue = queue.Queue()  # queue for passing data to the plotting thread
+        self.data_queue = queue.Queue()  # cmd_queue for passing data to the plotting thread
         self.plotting_thread = threading.Thread(target=self.plotting_loop, daemon=True) # Create the plotting thread
         self.running = False
         self.save_figs = save_figs

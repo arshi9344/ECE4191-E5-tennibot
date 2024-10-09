@@ -31,7 +31,7 @@ class DecisionMaker:
             robot_pose,
             goal_position,
             detection_results_q,
-            command_queue, # the shared command queue inside shared_data
+            command_queue, # the shared command cmd_queue inside shared_data
             occupancy_map, # shared object instantiated inside ProcessCoordinator
             deposit_time_limit=8*60,
             max_capacity=4,
@@ -40,9 +40,9 @@ class DecisionMaker:
         # Shared multiprocessing manager variables
         self.robot_pose = robot_pose  # Shared dict with robot's current pose {'x': x, 'y': y, 'th': th}
         self.goal_position = goal_position  # Shared dict for the goal position
-        self.detection_results_q = detection_results_q  # Shared queue with the latest detection results
+        self.detection_results_q = detection_results_q  # Shared cmd_queue with the latest detection results
         self.shared_data = shared_data # Shared dict with the latest detection results
-        self.command_queue : StatefulCommandQueue = command_queue # Shared command queue
+        self.command_queue : StatefulCommandQueue = command_queue # Shared command cmd_queue
 
         # Shared ProcessCoordinator variables (these are plain old lists, dicts, not mp.manager objects)
         self.occupancy_map : OccupancyMap = occupancy_map  # Shared occupancy map object
@@ -69,31 +69,33 @@ class DecisionMaker:
             {'name': RobotStates.ROTATE_SCAN}, # need to issue RobotCommands.ROTATE command
             {'name': RobotStates.STAMP, 'on_enter': '', 'on_exit': 'handle_stamp_completion'},
             {'name': RobotStates.ALIGN, 'on_enter': '', 'on_exit': ''},  # need to issue RobotCommands.ALIGN command
-            {'name': RobotStates.DEPOSIT, 'on_enter': '', 'on_exit': 'handle_deposit_completion'},  # need to issue RobotCommands.DEPOSIT command
+            {'name': RobotStates.DEPOSIT, 'on_enter': '', 'on_exit': ''},  # need to issue RobotCommands.DEPOSIT command
         ]
 
         transitions = [
-            ##### These are the transitions that determine the robot's next action based on its internal state ####
+            ##### These are the transitions that determine the robot's next action based on its internal state #####
+            # all the methods under 'conditions' must return True for the transition to occur
+            # all the methods under 'unless' must return False for the transition to occur
 
             # Transitions for driving to a location
             {
                 'trigger': 'decide_next_action',
                 'source': [RobotStates.IDLE, RobotStates.DRIVE_TO_SCAN_POINT, RobotStates.DEPOSIT, RobotStates.ROTATE_SCAN],
                 'dest': RobotStates.DRIVE_TO_BALL,
-                'conditions': ['has_known_balls'], # needs to return True
-                'unless': ['should_return_to_deposit'] # needs to return False
+                'conditions': ['has_known_balls'], # NOTABLY, there is NO _check_command_completion here, because the robot should immediately go back to deposit box
+                'unless': ['should_return_to_deposit']
             },
             {
                 'trigger': 'decide_next_action',
-                'source': [RobotStates.DRIVE_TO_BALL, RobotStates.DRIVE_TO_DEPOSIT_BOX, RobotStates.DRIVE_TO_SCAN_POINT, RobotStates.STAMP, RobotStates.ROTATE_SCAN], # i.e. NOT IDLE, DEPOSIT, ALIGN
+                'source': [RobotStates.DRIVE_TO_BALL, RobotStates.DRIVE_TO_SCAN_POINT, RobotStates.STAMP, RobotStates.ROTATE_SCAN], # i.e. NOT IDLE, DEPOSIT, ALIGN
                 'dest': RobotStates.DRIVE_TO_DEPOSIT_BOX,
-                'conditions': ['should_return_to_deposit']
+                'conditions': ['should_return_to_deposit']  # NOTABLY, there is NO _check_command_completion here, because the robot should immediately go back to deposit box
             },
             {
                 'trigger': 'decide_next_action',
                 'source': [RobotStates.IDLE, RobotStates.ROTATE_SCAN, RobotStates.DEPOSIT], # could add RobotStates.STAMP, but permitted only if another ball is within 50cm or something
                 'dest': RobotStates.DRIVE_TO_SCAN_POINT,
-                'conditions': [],
+                'conditions': ['_check_command_completion'],
                 'unless': ['has_known_balls', 'should_return_to_deposit']
             },
 
@@ -102,25 +104,26 @@ class DecisionMaker:
                 'trigger': 'decide_next_action',
                 'source': [RobotStates.DRIVE_TO_BALL, RobotStates.STAMP],
                 'dest': RobotStates.STAMP,
-                'conditions': ['is_ball_in_front'],
+                'conditions': ['is_ball_in_front', '_check_command_completion'],
                 'unless': ['should_return_to_deposit']
             },
             {
                 'trigger': 'decide_next_action',
                 'source': RobotStates.DRIVE_TO_DEPOSIT_BOX,
                 'dest': RobotStates.ALIGN,
-                'conditions': ['should_return_to_deposit','is_deposit_box_reached'],
+                'conditions': ['should_return_to_deposit','is_deposit_box_reached', '_check_command_completion'],
             },
             {
                 'trigger': 'decide_next_action',
                 'source': RobotStates.ALIGN,
                 'dest': RobotStates.DEPOSIT,
+                'conditions': ['_check_command_completion']
             },
             {
                 'trigger': 'decide_next_action',
                 'source': [RobotStates.DRIVE_TO_SCAN_POINT, RobotStates.STAMP],
                 'dest': RobotStates.ROTATE_SCAN,
-                'conditions': [],
+                'conditions': ['_check_command_completion'] #
             }
 
         ]
@@ -131,16 +134,22 @@ class DecisionMaker:
 
     def update(self):
         """Main update called in ProcessCoordinator control loop."""
-        print(f'Updating. State before update (AKA what doing now): {self.state}')
+        # print(f"Queue: {self.command_queue.show_entire_queue()}")
+        print(f'UPDATE: State before update (AKA what doing now): {self.state}')
         self._refresh_ball_goal() # this is to update the ball goal position to the nearest ball using most recent perception data
-        self._check_command_completion()
+
+        self._check_deposit_completion() # this is to check if the robot has finished depositing balls.
+        ## The reason we can't use an 'after' transition for the above is is because we need to check this every loop iteration and reset the self.last_deposit_time and self.collected_balls,
+        ## otherwise the robot will never leave the deposit state.
+
+        self._check_command_completion(verbose=True) # JUST FOR DEBUG
         self.decide_next_action() # method added by the state machine at runtime
 
         #TODO: Refine state completion check logic here
 
 
     def _issue_command(self):
-        # issue the command to the command queue
+        # issue the command to the command cmd_queue
         match self.state:
             case RobotStates.DRIVE_TO_BALL:
                 self.curr_command_id = self.command_queue.put(RobotCommands.DRIVE)
@@ -159,29 +168,40 @@ class DecisionMaker:
             case RobotStates.IDLE:
                 self.curr_command_id = self.command_queue.put(RobotCommands.STOP)
 
-        print(f"New state: {self.state}, issued command_id: {self.curr_command_id}")
+        print(f"NEW STATE: {self.state}, issued command_id: {self.curr_command_id}")
 
 
-    # Check if the last issued A.K.A current command is completed or still processing.
-    def _check_command_completion(self) -> bool:
+    # Check if the last issued A.K.A current command is completed or still processing. This is used to determine if the next robotstate should be entered,
+    # and therefore, if a new command should be issued.
+    # This must return true for the state machine to transition to the next state, for all states, EXCEPT the DRIVE_TO_DEPOSIT_BOX state, as once the timer
+    # has expired, the robot should immediately go back and start depositing balls.
+
+    def _check_command_completion(self, verbose=False) -> bool:
         return_val = False
         if self.curr_command_id is not None:
             status = self.command_queue.get_status(self.curr_command_id)
             if status == CommandStatus.DONE:
-                self.curr_command_id = None
+                # self.curr_command_id = None # Removed this because I don't want to change state here, seems messy
                 return_val = True
             elif status == CommandStatus.FAILED:
-                self.curr_command_id = None
+                # self.curr_command_id = None
                 return_val = True
             elif status == CommandStatus.PROCESSING:
                 return_val = False
             elif status == CommandStatus.QUEUED:
                 return_val = False
-            print(f"{self.command_queue.get_data(self.curr_command_id)} (id: {self.curr_command_id}) is {status}")
+            if verbose: print(f"    _check_command_completion: {self.state} with {self.command_queue.get_data(self.curr_command_id)} (id: {self.curr_command_id}) is {status}")
         else:
-            print(f"No previous command")
+            if verbose: print(f"_check_command_completion: No previous command")
+            return_val = True  # If there is no previous command, return True, because there is nothing to wait for
 
         return return_val
+
+    def _check_deposit_completion(self):
+        if self.curr_command_id is not None and self.state == RobotStates.DEPOSIT and self._check_command_completion():
+            # After depositing, reset the collected balls and update the last deposit time
+            self.collected_balls = 0
+            self.last_deposit_time = time.time()
 
     def _refresh_ball_goal(self):
         if self.state == RobotStates.DRIVE_TO_BALL:
@@ -200,11 +220,6 @@ class DecisionMaker:
         self.collected_balls += 1
         self.occupancy_map.remove_ball(self.current_ball_id)
 
-
-    # After depositing, reset the collected balls and update the last deposit time
-    def handle_deposit_completion(self):
-        self.collected_balls = 0
-        self.last_deposit_time = time.time()
 
 
 
@@ -238,14 +253,18 @@ class DecisionMaker:
 
     # Returns True if robot should return to deposit box. Depends on time elapsed and capacity.
     def should_return_to_deposit(self):
-        time_condition = time.time() - self.last_deposit_time > self.deposit_time_limit
+        time_condition = (time.time() - self.last_deposit_time) > self.deposit_time_limit
         capacity_condition = self.collected_balls >= self.max_capacity and self.collected_balls > 0
 
-        if time_condition or capacity_condition: return True
+        if time_condition or capacity_condition:
+            print(f"Returning to deposit box; time condition: {time_condition}, capacity condition: {capacity_condition}")
+            return True
         return False
 
     def is_deposit_box_reached(self):
         # insert logic to check if robot is at deposit box. For now, just return True
+        # we're also relying on the check_command_completion method to ensure the robot has finished processing the
+        # previous command, so this function is just for any additional checks immediately prior to depositing
 
         return True
 
@@ -258,11 +277,20 @@ class DecisionMaker:
 
 # Example usage
 if __name__ == '__main__':
+    def mock_robot(command_q: StatefulCommandQueue, last_got_command_id):
+        # Mark previous command as Done
+        if last_got_command_id is not None:
+            cmd_name = command_q.get_data(last_got_command_id)
+            command_q.mark_done(last_got_command_id)
+            print(f"----- Mock robot DONE {cmd_name}, id: {last_got_command_id}")
+            return None
 
-    def consume(command_q: StatefulCommandQueue):
-        if not command_q.empty():
-            command = command_q.get()
-            print(f"----- Consumed command: {command}")
+        # Get the current command
+        elif not command_q.empty():
+            command, cmd_id = command_q.get()
+            print(f"### Mock robot GOT {command}, id: {cmd_id}")
+            return cmd_id
+
 
     manager = mp.Manager()
     shared_data = {
@@ -280,7 +308,8 @@ if __name__ == '__main__':
         goal_position=goal_position,
         detection_results_q=detection_results_q,
         command_queue=shared_data['robot_command'],
-        occupancy_map=occupancy_map
+        occupancy_map=occupancy_map,
+        deposit_time_limit=15
     )
 
     @dataclass
@@ -297,12 +326,15 @@ if __name__ == '__main__':
             return self.x, self.y, self.angle
 
     counter = 0
+    last_got_cmd_id = None
     while True:
         print('-------------------')
         decision_maker.update()
+        print(f"OCC. MAP: {occupancy_map}")
         if counter % 2 == 0:
-            consume(shared_data['robot_command'])
-        if counter % 5 == 0:
-            occupancy_map.update([DetectionMock(x=counter, y=counter, angle=0, total_distance=0, confidence=0.9, in_collection_zone=False)])
+            last_got_cmd_id = mock_robot(shared_data['robot_command'], last_got_cmd_id)
+        if counter % 5 == 0 and counter > 0:
+            print(f"### ADDED BALL")
+            occupancy_map.update([DetectionMock(x=counter/5, y=counter/5, angle=0, total_distance=0, confidence=0.9, in_collection_zone=False)])
         counter += 1
-        time.sleep(2)  # Add a small delay to prevent busy-waiting
+        time.sleep(1)  # Add a small delay to prevent busy-waiting

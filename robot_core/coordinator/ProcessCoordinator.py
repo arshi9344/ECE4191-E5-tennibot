@@ -62,7 +62,7 @@ class Coordinator:
             - On startup, goal_position will contain a Position for a scanning point. Robot will start moving towards this.
             - If VisionRunner sees a ball, then the Coordinator inserts a Position for ball coordinates into goal_position. 
                 - The robot hence starts moving toward the ball.
-                - If VisionRunner refines its estimate of the ball's position, then Coordinator inserts this new coord into the queue.
+                - If VisionRunner refines its estimate of the ball's position, then Coordinator inserts this new coord into the cmd_queue.
                 - Once the ball is collected, Coordinator then inserts the next scanning point into goal_position
 
         """

@@ -52,7 +52,7 @@ class VisionRunner(mp.Process):
         self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
 
         self.last_update = None
-        self.detection_results_q = detection_results_q # shared queue, containing the latest detection results, read by ProcessCoordinator
+        self.detection_results_q = detection_results_q # shared cmd_queue, containing the latest detection results, read by ProcessCoordinator
         # TODO: Add class instances here for TennisBallDetector and BoxDetector
         
         self.default_camera_idx = camera_idx

@@ -171,7 +171,7 @@ class Orchestrator(mp.Process):
                 print(f'INSIDE: {seee}')
 
                 if self.shared_data['robot_command'].get() == RobotCommands.DRIVE:
-                    # Get the robot's goal position from the shared goal_position queue
+                    # Get the robot's goal position from the shared goal_position cmd_queue
                     goal = self.get_latest_goal(goal)
                     res = self.movement(goal.x, goal.y, goal.th)
 
@@ -241,7 +241,7 @@ class Orchestrator(mp.Process):
                         # self.movement(self.robot.x,self.robot.y,self.robot.th + angle_rad )
 
                     elif check_return == 'arrived':
-                        # In the robot state queue, notify the queue itself that the object has been processed
+                        # In the robot state cmd_queue, notify the cmd_queue itself that the object has been processed
                         pass
 
                     self.log_data(
@@ -301,7 +301,7 @@ class Orchestrator(mp.Process):
             res = self.goal_position['goal']
             # print(f"get_latest_goal: {res}")
         except Exception:
-            # If queue is empty, return the current goal (no change)
+            # If cmd_queue is empty, return the current goal (no change)
             res = current_goal
 
         if self.debug and current_goal != res:

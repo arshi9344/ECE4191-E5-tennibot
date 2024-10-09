@@ -32,6 +32,9 @@ class Ball:
         self.x = detection.x
         self.y = detection.y
 
+    def __repr__(self):
+        return f"Ball {self.ball_id}: ({self.x}, {self.y})"
+
 
 class OccupancyMap:
     def __init__(self,
@@ -98,3 +101,48 @@ class OccupancyMap:
 
     def is_empty(self) -> bool:
         return len(self.balls) == 0
+
+    def __repr__(self):
+        if self.is_empty():
+            return "OccupancyMap: Empty."
+        output_str = "OccupancyMap: "
+        for ball in self.balls.values():
+            output_str += f"{ball}, "
+        return output_str
+
+
+if __name__ == '__main__':
+    # A better example of test usage is in decision_maker.py, where the test code uses an OccupancyMap to track tennis balls.
+    # Test OccupancyMap
+    detections=[
+        BallDetection(x=0.5, y=0.5, angle=0, total_distance=0.5, confidence=0.8, in_collection_zone=False),
+        BallDetection(x=0.6, y=0.6, angle=0, total_distance=0.6, confidence=0.9, in_collection_zone=False),
+        BallDetection(x=1.5, y=1.5, angle=0, total_distance=1.5, confidence=0.7, in_collection_zone=False),
+        BallDetection(x=0.5, y=0.4, angle=0, total_distance=0.5, confidence=0.8, in_collection_zone=False),
+        BallDetection(x=0.6, y=0.7, angle=0, total_distance=0.6, confidence=0.9, in_collection_zone=False),
+        BallDetection(x=1.5, y=1.5, angle=0, total_distance=1.5, confidence=0.7, in_collection_zone=False),
+        BallDetection(x=0.5, y=0.5, angle=0, total_distance=0.5, confidence=0.8, in_collection_zone=False),
+        BallDetection(x=0.6, y=0.6, angle=0, total_distance=0.6, confidence=0.9, in_collection_zone=False),
+        BallDetection(x=1.4, y=1.5, angle=0, total_distance=1.5, confidence=0.7, in_collection_zone=False),
+        BallDetection(x=0.4, y=0.5, angle=0, total_distance=0.5, confidence=0.8, in_collection_zone=False),
+        BallDetection(x=0.6, y=0.6, angle=0, total_distance=0.6, confidence=0.9, in_collection_zone=False),
+        BallDetection(x=1.5, y=1.5, angle=0, total_distance=1.5, confidence=0.7, in_collection_zone=False)
+    ]
+
+    # Define the quadrant bounds (xmin, xmax, ymin, ymax)
+    quadrant_bounds = (0.0, 5.0, 0.0, 4.0)  # Example bounds
+    occupancy_map = OccupancyMap(quadrant_bounds)   # Create an instance of OccupancyMap
+
+
+    # Update the occupancy map with detections
+    occupancy_map.update(detections)
+
+    # Get the closest ball to the robot at position (1.0, 1.0)
+    closest_ball = occupancy_map.get_closest_ball(robot_x=1.0, robot_y=1.0, robot_theta=0.0)
+    print(f"Closest ball: {closest_ball}")  # Outputs: Closest ball: (2.05, 1.05, 1)
+
+    # Remove a ball by ID
+    occupancy_map.remove_ball(ball_id=1)
+
+    # Check if the occupancy map is empty
+    print(f"Is the occupancy map empty? {occupancy_map.is_empty()}")  # Outputs: False
