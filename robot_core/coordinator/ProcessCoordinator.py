@@ -6,7 +6,10 @@ import traceback
 
 import queue
 from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
+
+from notebooks.simulation.detector_tester import detection
 from robot_core.hardware.diff_drive_robot import DiffDriveRobot
+from robot_core.hardware.dimensions import COURT_XLIM, COURT_YLIM
 from robot_core.motion.tentacle_planner import TentaclePlanner
 from robot_core.control.PI_controller import PIController
 from robot_core.coordinator.commands import RobotCommands, StateWrapper, VisionCommands
@@ -17,6 +20,8 @@ from robot_core.utils.logging_utils import setup_logging, create_log_listener
 from robot_core.utils.robot_log_point import RobotLogPoint
 from robot_core.utils.position import Position, PositionTypes
 from robot_core.utils.command_utils import StatefulCommandQueue, Command, CommandStatus
+from robot_core.coordinator.decision_maker import DecisionMaker
+from robot_core.coordinator.occupancy_map import OccupancyMap
 from robot_core.utils.robot_plotter import RobotPlotter
 import matplotlib.pyplot as plt
 import os
@@ -42,12 +47,10 @@ class Coordinator:
             save_figs=False
     ):
         self.manager = Manager()
-        self.shared_data = {
-            'running': self.manager.Value('b', True),
-            'robot_command': StateWrapper(self.manager, RobotCommands, RobotCommands.STOP),
-            'vision_command': StateWrapper(self.manager, VisionCommands, VisionCommands.NONE),
-            'command_queue': StatefulCommandQueue(self.manager),
-        }
+        self.running = self.manager.Value('b', True)
+        self.vision_command : StateWrapper = StateWrapper(self.manager, VisionCommands, VisionCommands.NONE)
+        self.robot_command_q : StatefulCommandQueue = StatefulCommandQueue(self.manager)
+
         self.robot_pose = self.manager.dict({'x': 0, 'y': 0, 'th': 0})
         self.goal_position = self.manager.dict({
             'goal': Position(0,0,0,PositionTypes.ROBOT), # Goal should be a Position object from robot_core.utils.position
@@ -98,10 +101,27 @@ class Coordinator:
 
         self.logger = logging.getLogger(f'{__name__}.Coordinator')
 
+        # Instantiating child classes; DecisionMaker and OccupancyMap
+        # OccupancyMap
+        self.occupancy_map = OccupancyMap(
+            quadrant_bounds= (0, COURT_XLIM, 0, COURT_YLIM),
+            matching_threshold=0.15, # in meters, the distance that balls are to be considered the same
+            confidence_threshold=0.7  # 0 to 1, the minimum confidence for a ball to be considered
+        )
+
+        # DecisionMaker
+        self.decision_maker = DecisionMaker(
+            robot_pose=self.robot_pose,
+            goal_position=self.goal_position,
+            command_queue=self.robot_command_q,
+            occupancy_map=self.occupancy_map,
+        )
+
         # Instantiating child processes
         # Orchestrator
         self.orchestrator = Orchestrator(
-            shared_data=self.shared_data,
+            running=self.running,
+            robot_command_q=self.robot_command_q,
             goal_position=self.goal_position,
             robot_pose=self.robot_pose,
             robot_graph_data=self.robot_graph_data,
@@ -113,26 +133,33 @@ class Coordinator:
 
         # VisionRunner
         self.vision_runner = VisionRunner(
-            shared_data=self.shared_data,
+            running=self.running,
+            vision_command=self.vision_command,
             shared_image=self.latest_image,
             detection_results_q=self.detection_results_q,
-            log_queue=self.log_queue,
             robot_pose=self.robot_pose,
+            log_queue=self.log_queue,
             log=self.log,
             camera_idx=0,
             use_simulated_video=False
         )
 
+
     def start(self):
         self.print_process()
         self.orchestrator.start()
+
         self.vision_runner.start()
+        self.vision_command.set(VisionCommands.DETECT_BALL)  # VisionRunner will constantly take pictures every 5 seconds and run it through the ML model. Results will be published to the self.detection_results_q
+
+
+        self.decision_maker.update()
 
         if self.live_graphs: self.plotter.start()
 
 
     def stop(self):
-        self.shared_data['running'] = False
+        self.running.value = False
         self.orchestrator.join()
         self.vision_runner.join()
 
@@ -141,27 +168,20 @@ class Coordinator:
 
     def run(self):
         self.start() # Starting Orchestrator and VisionRunner
-
-        # Setting initial states for Orchestrator and VisionRunner.
-        self.shared_data['robot_command'].set(RobotCommands.DRIVE)
-        # VisionRunner will constantly take pictures every 5 seconds and run it through the ML model. Results will be published to the self.detection_results_q
-        self.shared_data['vision_command'].set(VisionCommands.DETECT_BALL)
-
-        # start with curr_scan_point = 0, prev_scan_point = None
         try:
-            while self.shared_data['running']:
-                pass
-                # This is our main control loop, where all our main logic is. Potentially, we could set the goal_position dict with goals from
-                # our occupancy map / DecisionMaker class here.
+            while self.running.value:
+                # This is our main control loop, where we update each of our components (that are not processes).
 
+                # Get data from the camera
+                detection_results = self.detection_results_q.get()
+                self.occupancy_map.update(detection_results.get(['ball_detection']))
+                # TODO: DO something with the box detection results here as well
 
-                # print(self.shared_data['robot_command'])
+                # Update the decision_maker and have it issue a new state
+                self.decision_maker.update()
 
-                # time.sleep(5)
-
-                # Graphing
-                # self.logger.info("Coordinator is running")
-                # sleep(0.1)
+                self.plot()
+                time.sleep(0.01)
 
         except KeyboardInterrupt:
             self.logger.info("Exiting Coordinator")
@@ -169,10 +189,7 @@ class Coordinator:
             self.logger.error(f"Error in Coordinator, exiting: {traceback.print_exc()}")
 
         finally:
-            # print(self.axes)
-            # print(self.fig)
             if self.live_graphs: self.plot()
-            # print(self.robot_graph_data)
             plt.ioff()
             plt.show()
             self.stop()

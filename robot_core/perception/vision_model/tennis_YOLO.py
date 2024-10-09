@@ -11,9 +11,9 @@ import time
 import sys
 import logging
 from ultralytics import YOLO
+from typing import List, Tuple, Union
 
-
-from robot_core.perception.detection_results import BallDetection, BoxDetection, DetectionResult
+from robot_core.perception.detection_results import BallDetection, BoxDetection
 
 # Define real tennis ball radius in meters (3.25 cm radius)
 MODEL_PATH = 'box_tennis.pt'
@@ -93,10 +93,10 @@ class ObjectDetection:
         """To be implemented by subclasses to provide object-specific zones."""
         raise NotImplementedError("Subclasses must implement get_zone method.")
 
-    def detect(self, frame: np.ndarray, draw_zones=True):
+    def detect(self, frame: np.ndarray, draw_zones=True) -> Tuple[List[BallDetection or BoxDetection], np.ndarray]:
         if frame is None:
             self.logger.error("Frame is None")
-            return [], frame
+            return [], np.array([])
 
         undistorted_frame = self.undistort(frame)
         results = self.model(undistorted_frame)  # Run inference

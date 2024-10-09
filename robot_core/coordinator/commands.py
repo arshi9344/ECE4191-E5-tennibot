@@ -9,8 +9,6 @@ class RobotCommands(Enum):
     ROTATE = 5 # for rotational scan
 
 
-
-
 class VisionCommands(Enum):
     NONE = 0
     DETECT_BALL = 1

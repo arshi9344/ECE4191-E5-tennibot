@@ -30,7 +30,6 @@ class DecisionMaker:
             self,
             robot_pose,
             goal_position,
-            detection_results_q,
             command_queue, # the shared command cmd_queue inside shared_data
             occupancy_map, # shared object instantiated inside ProcessCoordinator
             deposit_time_limit=8*60,
@@ -40,7 +39,6 @@ class DecisionMaker:
         # Shared multiprocessing manager variables
         self.robot_pose = robot_pose  # Shared dict with robot's current pose {'x': x, 'y': y, 'th': th}
         self.goal_position = goal_position  # Shared dict for the goal position
-        self.detection_results_q = detection_results_q  # Shared cmd_queue with the latest detection results
         self.shared_data = shared_data # Shared dict with the latest detection results
         self.command_queue : StatefulCommandQueue = command_queue # Shared command cmd_queue
 
@@ -264,8 +262,8 @@ class DecisionMaker:
     def is_deposit_box_reached(self):
         # insert logic to check if robot is at deposit box. For now, just return True
         # we're also relying on the check_command_completion method to ensure the robot has finished processing the
-        # previous command, so this function is just for any additional checks immediately prior to depositing
-
+        # previous command, so this function is just for any additional checks immediately prior to depositing. not sure if we need this.
+        # TODO: Decide if we need this or not. If not, just leave the return True
         return True
 
 
@@ -273,6 +271,7 @@ class DecisionMaker:
     def is_ball_in_front(self):
         # insert logic to check if ball is in front. For now, just return True
         # pass this from coordinator, using
+        # TODO: Add logic to see if ball is in front. DecisionMaker may need perception results? hmmm
         return True
 
 # Example usage
@@ -306,7 +305,6 @@ if __name__ == '__main__':
     decision_maker = DecisionMaker(
         robot_pose=robot_pose,
         goal_position=goal_position,
-        detection_results_q=detection_results_q,
         command_queue=shared_data['robot_command'],
         occupancy_map=occupancy_map,
         deposit_time_limit=15

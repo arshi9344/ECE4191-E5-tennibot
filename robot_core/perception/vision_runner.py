@@ -21,17 +21,18 @@ from matplotlib import pyplot as plt
 from robot_core.utils.logging_utils import setup_logging
 from robot_core.coordinator.commands import RobotCommands, VisionCommands, StateWrapper
 from robot_core.utils.position import Position, PositionTypes
-from robot_core.perception.detection_results import BallDetection, BoxDetection, DetectionResult
+from robot_core.perception.detection_results import BallDetection, BoxDetection
 
 class VisionRunner(mp.Process):
     def __init__(
             self,
-            shared_data,
-            shared_image,
+            running, # the running flag, which is mp.manager.Value('b', True) initalised in ProcessCoordinator
+            vision_command, # the vision command, which is a StateWrapper initalised in ProcessCoordinator
+            shared_image, # a dict to publish the latest image to, which is a mp.manager.dict initalised in ProcessCoordinator
+            detection_results_q, # a queue to publish the latest detection results to, which is a mp.manager.Queue initalised in ProcessCoordinator
+            robot_pose, # the robot's current pose, which is a mp.manager.dict initalised in ProcessCoordinator
+            camera_idx,  # the default camera index to use. It's tried first, then the others of 0, 1, 2, 3 are tried.
             log_queue,
-            detection_results_q,
-            camera_idx,
-            robot_pose,
             collection_zone=(200, 150, 400, 350),
             deposition_zone=(200, 150, 400, 350),
             camera_height=0.02,
@@ -43,42 +44,29 @@ class VisionRunner(mp.Process):
         if log: setup_logging(log_queue)
         self.logger = logging.getLogger(f'{__name__}.Orchestrator')
 
-        self.scanning_interval = scanning_interval # The duration in seconds between each image
-        self.shared_data = shared_data
+        ##### Shared Data (all mp.manager objects or wrappers for them) #####
+        self.running = running
+        self.vision_command = vision_command
         self.shared_image = shared_image
-        self.robot_pose = robot_pose
-
-        self.logger.info(f"Initialising VisionRunner, scanning interval: {self.scanning_interval}s")
-        self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
-
-        self.last_update = None
         self.detection_results_q = detection_results_q # shared cmd_queue, containing the latest detection results, read by ProcessCoordinator
-        # TODO: Add class instances here for TennisBallDetector and BoxDetector
-        
-        self.default_camera_idx = camera_idx
-        self.camera = None
-        self.camera_height = camera_height
-        self.frame = None
+
+        ### Other state variables, parameters ###
+        self.scanning_interval = scanning_interval # The duration in seconds between each image
+        self.robot_pose = robot_pose
         self.collection_zone = collection_zone
         self.deposition_zone = deposition_zone
         self.simulate = use_simulated_video
+        self.camera_height = camera_height
+        self.default_camera_idx = camera_idx
 
+        self.last_update = None
+        self.camera = None
+        self.frame = None
         self.ball_detector = None
         self.box_detector = None
 
-        # Load the YOLO model and calibration data
-        # current_dir = Path(__file__).parent # Get the directory of the current script
-        # Construct the path to the .npz file
-        # npz_file_path = current_dir / 'vision_model/calib6_matrix.npz'
-        # model_path = current_dir / 'vision_model/best.pt'
-        # custom_cache_dir = current_dir / 'vision_model/cache'
-        # # Set the custom cache directory
-        # os.environ['TORCH_HOME'] = custom_cache_dir
-
-        # Now you can load the .npz file
-        # calibration_data = np.load(npz_file_path)
-        # camera_matrix = calibration_data['camera_matrix']
-        # distortion_coeffs = calibration_data['dist_coeffs']
+        self.logger.info(f"Initialising VisionRunner, scanning interval: {self.scanning_interval}s")
+        self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
         
 
     def combine_frames(self, ball_frame, box_frame):
@@ -91,8 +79,8 @@ class VisionRunner(mp.Process):
         # Initialize the TennisBallDetector with camera height
         try:
             from robot_core.perception.vision_model.tennis_YOLO import TennisBallDetector, BoxDetector
-            self.ball_detector = TennisBallDetector(collection_zone= self.collection_zone)
-            self.box_detector = BoxDetector(deposition_zone=self.deposition_zone)
+            self.ball_detector : TennisBallDetector = TennisBallDetector(collection_zone= self.collection_zone)
+            self.box_detector : BoxDetector = BoxDetector(deposition_zone=self.deposition_zone)
 
         except Exception:
             print(f"Error loading TennisBallDetector: {traceback.print_exc()}")
@@ -107,8 +95,8 @@ class VisionRunner(mp.Process):
                 return
 
             try:
-                while self.shared_data['running']:
-                    if self.shared_data['vision_command'].get() != VisionCommands.NONE:
+                while self.running.value:
+                    if self.vision_command.get() != VisionCommands.NONE:
                         ret, self.frame = self.camera.read() # capture image
                         self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
 
@@ -133,11 +121,9 @@ class VisionRunner(mp.Process):
 
                         if ball_detections or box_detections:
                             combined_frame = self.combine_frames(ball_frame, box_frame)
-
                             
                             self.detection_results_q.put({
                                 'time': self.last_update,
-                                'frame': combined_frame, #  CHECK 
                                 'ball_detection': ball_detections,
                                 'box_detection': box_detections
                             })
@@ -226,7 +212,9 @@ if __name__ == '__main__':
     shared_image = manager.dict({'time': None, 'frame': None})
 
     vision_runner = VisionRunner(
-        shared_data=shared_data,
+        running = shared_data['running'],
+        vision_command=shared_data['vision_command'],
+        robot_pose=manager.dict({'x': 0, 'y': 0, 'th': 0}),
         shared_image=shared_image,
         detection_results_q=detection_results_q,
         log_queue=log_queue,

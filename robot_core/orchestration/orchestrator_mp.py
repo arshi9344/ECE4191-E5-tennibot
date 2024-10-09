@@ -10,12 +10,13 @@ import os
 import psutil
 from queue import Empty
 import traceback
-
+from typing import Optional
 
 from matplotlib import pyplot as plt
 
 from robot_core.control.PI_controller import PIController
 from robot_core.motion.tentacle_planner import TentaclePlanner
+from robot_core.utils.command_utils import StatefulCommandQueue
 from robot_core.utils.logging_utils import setup_logging
 from robot_core.utils.robot_log_point import RobotLogPoint
 from robot_core.orchestration.scan_point_utils import ScanPointGenerator
@@ -23,18 +24,23 @@ from robot_core.coordinator.commands import RobotCommands
 from robot_core.utils.position import Position, PositionTypes
 # from robot_core.perception.ultrasonic_sensors import UltrasonicSensor # moved import inside the Orchestrator.run() method
 """
+How Orchestrator works is that it accepts a command, and then acts upon it. It checks the command queue on EVERY iteration, 
+and grabs the latest command and immediately acts upon it. The responsibility for checking if the command is done is on the DecisionMaker, and NOT the Orchestrator.
+
+Orchestrator is DUMB: It gets a command, acts upon it, and then notifies the StatefulCommandQueue that the command is done. It doesn't care about the command after that.
 
 """
 
 class Orchestrator(mp.Process):
     def __init__(
             self,
-            shared_data,
-            goal_position,
-            robot_pose,
-            robot_graph_data,
-            log_queue,
-            simulated_robot, # boolean
+            running, # the running flag, which is mp.manager.Value('b', True) initalised in ProcessCoordinator
+            robot_command_q : StatefulCommandQueue, # the robot command queue, which is a StatefulCommandQueue object initalised in ProcessCoordinator
+            goal_position, # the goal position, which is a mp.manager.dict initalised in ProcessCoordinator
+            robot_pose, # the robot pose, which is a mp.manager.dict initalised in ProcessCoordinator
+            robot_graph_data, # the robot graph data, which is a mp.manager.list initalised in ProcessCoordinator
+            log_queue, # the log queue, which is a mp.Queue
+            simulated_robot, # boolean, whether the robot is simulated or not. True or False
             controller=None,
             planner=None,
             dt=None,
@@ -50,16 +56,21 @@ class Orchestrator(mp.Process):
         print(f"Logger handlers: {self.logger.handlers}")
         print(f"Logger parent: {self.logger.parent}")
 
-        self.shared_data = shared_data  # Shared data like robot pose (updated by orchestrator) and also motion state (read by orchestrator)
+        ##### Shared Data (all mp.manager objects or wrappers for them) #####
+        self.running = running  # mp.manager.Value('b', True)
+        self.robot_command_q : StatefulCommandQueue = robot_command_q  # StatefulCommandQueue object
         self.goal_position = goal_position  # Dict, Consumed (read) by Orchestrator to adjust robot's pose
         self.robot_pose = robot_pose  # Updated by Orchestrator
         self.robot_graph_data = robot_graph_data  # Updated by Orchestrator
 
+        #### Internal state variables
         self.last_update = None
         self.start_time = None
+        self.curr_command_id = None
+        self.current_command = None
         self.simulated_robot: bool = simulated_robot  # boolean
         self.debug = debug
-        # Initialising subcomponents (robot, controller, planner)
+
         self.logger.info(f"Initialising Orchestrator:")
         self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
         # print(f"Process ID: {os.getpid()} - Running worker: {self.name}")
@@ -69,6 +80,7 @@ class Orchestrator(mp.Process):
             self.dt = dt
         self.logger.info(f"    Using dt={self.dt}")
 
+        ###### Subcomponents ######
         # These are initialised inside run()
         self.robot = None
         self.ultrasonic = None
@@ -141,10 +153,9 @@ class Orchestrator(mp.Process):
 
     def run(self):
         try:
+            ### Initialisation ###
             self.print_process()
             self.start_time = time.time()
-            wl_desired, wr_desired, duty_cycle_l, duty_cycle_r, goal_x, goal_y, goal_th = None, None, None, None, None, None, None
-            goal = Position(0, 0, 0, PositionTypes.ROBOT)
 
             # Initialise Robot and Ultrasonic sensors
             if not self.simulated_robot:
@@ -164,17 +175,26 @@ class Orchestrator(mp.Process):
 
             print(f"    Initialised {reality} robot.")
 
-            while self.shared_data['running']:
+            # Main loop and logic
+            while self.running.value:
                 # self.logger.setLevel(logging.DEBUG)  # or logging.INFO
                 # print(f"Orchestrator running. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
-                seee = self.shared_data['robot_command'].get()
-                print(f'INSIDE: {seee}')
+                command = self.get_command()
 
-                if self.shared_data['robot_command'].get() == RobotCommands.DRIVE:
+                if command == RobotCommands.STOP:
+                    print("### Orchestrator: in STOP command")
+                    self.robot.set_motor_speed(0, 0)
+                    self.log_data(0,0,0,0,
+                        Position(self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['z'], PositionTypes.ROBOT)
+                    )
+                    self.mark_command_done()
+
+
+                elif command == RobotCommands.DRIVE:
+                    print("### Orchestrator: in DRIVE command")
                     # Get the robot's goal position from the shared goal_position cmd_queue
-                    goal = self.get_latest_goal(goal)
+                    goal = self.get_latest_goal()
                     res = self.movement(goal.x, goal.y, goal.th)
-
                     self.log_data(
                         res['wl_desired'],
                         res['wr_desired'],
@@ -183,47 +203,35 @@ class Orchestrator(mp.Process):
                         goal
                     )
 
-                elif self.shared_data['robot_command'].get() == RobotCommands.STOP:
-                    self.robot.set_motor_speed(0, 0)
-                    self.log_data(
-                        0,
-                        0,
-                        0,
-                        0,
-                        Position(None, None, None, PositionTypes.ROBOT)
-                    )
+                    # If the goal has been reached, mark the command as done
+                    if self.is_goal_reached(goal): # TODO: position type-aware is_goal_reached IS NOT IMPLEMENTED YET
+                        self.mark_command_done()
 
-                elif self.shared_data['robot_command'].get() == RobotCommands.COLLECT:
-                    #                     # Move towards the collection point
-                    #                     goal = self.get_latest_goal(goal)
-                    #                     res = self.movement(goal.x, goal.y, goal.th)
-                    #                     goal_reached = res['goal_reached']
-
-                    #                     if goal_reached:
-                    # Stop the robot and collect the object
-                    self.robot.set_motor_speed(0, 0)
+                elif command == RobotCommands.STAMP:
+                    print("### Orchestrator: in STAMP command")
+                    # Stop the robot and collect the ball
+                    self.robot.set_motor_speed(0, 0) # stop the robot if it isn't already
                     self.servo.stamp()  # Activate the collection mechanism
-                    print("here")
+                    self.mark_command_done()
 
-
-
-                elif self.shared_data['robot_command'].get() == RobotCommands.DEPOSIT:
+                elif command == RobotCommands.DEPOSIT:
+                    print("### Orchestrator: in DEPOSIT command")
                     # We're now depositing the balls, so insert servo control logic here
                     self.robot.set_motor_speed(0, 0)
                     self.servo.deposit()
-                    print("here2")
                     self.log_data(
                         0,
                         0,
                         0,
                         0,
-                        Position(None, None, None, PositionTypes.ROBOT)
+                        Position(self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['z'], PositionTypes.ROBOT)
                     )
 
-                elif self.shared_data['robot_command'].get() == RobotCommands.ALIGN:
+                elif command == RobotCommands.ALIGN:
+                    print("### Orchestrator: in ALIGN command")
+
                     # This should be run after the box has been detected, now aligning the robot via ultrasonic sensors
                     #                     self.robot.set_motor_speed(0, 0)
-                    print("inside")
 
                     # Once in desired location to begin scanning the drop off box
                     check_return = self.ultrasonic.check_alignment(depot_distance_threshold=15, alignment_tolerance=1.2)
@@ -249,11 +257,18 @@ class Orchestrator(mp.Process):
                         0,
                         0,
                         0,
-                        Position(None, None, None, PositionTypes.ROBOT)
+                        Position(self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['z'], PositionTypes.ROBOT)
                     )
 
-                # print(self.robot_graph_data[-1])
-                # print(json.dumps(data))
+                elif command == RobotCommands.ROTATE:
+                    print("### Orchestrator: in ROTATE command")
+
+                    # The RobotCommands.ROTATE means that the robot should rotate on the spot to scan. For now, we always do 360 degrees.
+                    # If we wanted to specify a specific angle, we would pass that in the command data, OR:
+                    #    we add an additional position type, like PositionTypes.ROTATE, and set the desired angular rotation as the .th (angle) in the Position object.
+                    #    then, inside this method, we just use the angle from the position object, and not care about the Position.x and Position.y
+                    pass
+
 
                 # Updating globally shared robot pose
                 self.robot_pose.update({
@@ -296,17 +311,37 @@ class Orchestrator(mp.Process):
         )
         self.robot_graph_data.append(log_point)
 
-    def get_latest_goal(self, current_goal) -> Position:
-        try:
-            res = self.goal_position['goal']
-            # print(f"get_latest_goal: {res}")
-        except Exception:
-            # If cmd_queue is empty, return the current goal (no change)
-            res = current_goal
+    def is_goal_reached(self, goal: Position) -> bool:
+        x, y, th = self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['th']
 
-        if self.debug and current_goal != res:
-            print(f"************ Orchestrator: New goal received! {res}")
+        # TODO: This function needs to be aware of the Position type. If it's the box, then it needs to be closer. If it's a ball, it needs to be 10-14 inches behind. etc.
+        #
+        # if goal.type == PositionTypes.BOX:
+        pass
+
+    def get_latest_goal(self) -> Optional[Position]:
+        res = self.goal_position.get('goal')
+        if self.debug:
+            # print(f"************ Orchestrator: Got goal: {res}")
+            pass
         return res
+
+    # Gets the current command from the robot_command_q. It always gets the latest command.
+    # If you don't want orchestrator to do something, then don't issue anything. It will do as it's told.
+    def get_command(self) -> Optional[RobotCommands]:
+        if not self.robot_command_q.empty():
+            self.current_command, self.curr_command_id = self.robot_command_q.get()
+            print(f"--#### Orchestrator: got NEW command {self.current_command}")
+        return self.current_command
+
+    # Marks the current command as done in the robot_command_q.
+    def mark_command_done(self):
+        if self.curr_command_id is not None:
+            cmd_name = self.robot_command_q.get_data(self.curr_command_id)
+            self.robot_command_q.mark_done(self.curr_command_id)
+            self.curr_command_id = None
+            self.current_command = None
+            print(f"----- Orchestrator: command {cmd_name} marked DONE")
 
     def print_process(self):
         # Get the current process ID
