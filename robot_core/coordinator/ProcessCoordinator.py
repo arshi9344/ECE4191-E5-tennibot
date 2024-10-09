@@ -200,7 +200,6 @@ class Coordinator:
         if time.time() - self.last_graph_time > self.graph_interval and len(self.robot_graph_data) > 0:
             self.last_graph_time = time.time()
             self.plotter.update_plot(self.robot_graph_data, self.latest_image, clear_output=self.clear_output)
-            #TODO: Add vision data into update_plot - make robotPlotter also accept vision data
 
             # print(f"Length of robot_graph_data: {len(self.robot_graph_data)}")
 

@@ -19,6 +19,8 @@ NOTES:
 - The RobotPlotter class uses a cmd_queue to pass data to the plotting thread, which then allows us to plot data in real-time with minimal impact on the main thread
 """
 
+# TODO: Add a way to plot the occupancy map too
+
 class RobotPlotter:
     def __init__(self, max_time_window, save_figs=True, efficient_mode=True):
         self.max_time_window = max_time_window
