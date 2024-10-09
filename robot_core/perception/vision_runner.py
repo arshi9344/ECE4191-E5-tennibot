@@ -31,6 +31,7 @@ class VisionRunner(mp.Process):
             log_queue,
             detection_results_q,
             camera_idx,
+            robot_pose,
             collection_zone=(200, 150, 400, 350),
             deposition_zone=(200, 150, 400, 350),
             camera_height=0.02,
@@ -45,6 +46,8 @@ class VisionRunner(mp.Process):
         self.scanning_interval = scanning_interval # The duration in seconds between each image
         self.shared_data = shared_data
         self.shared_image = shared_image
+        self.robot_pose = robot_pose
+
         self.logger.info(f"Initialising VisionRunner, scanning interval: {self.scanning_interval}s")
         self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
 
@@ -125,6 +128,9 @@ class VisionRunner(mp.Process):
                         ball_detections, ball_frame = self.ball_detector.detect(ball_frame)
                         box_detections, box_frame = self.box_detector.detect(box_frame)
 
+                        # Convert the relative position of the ball to global position
+                        ball_detections = [self._estimate_ball_global_position(detection) for detection in ball_detections]
+
                         if ball_detections or box_detections:
                             combined_frame = self.combine_frames(ball_frame, box_frame)
 
@@ -176,6 +182,26 @@ class VisionRunner(mp.Process):
 
         print(f"VisionRunner: Error: Could not open USB camera. Tried {camera_idxs}")
         return False
+
+
+    def _estimate_ball_global_position(self, detection: BallDetection) -> BallDetection:
+
+        # Estimate the global position using the robot's current pose and the detection's relative position
+        robot_x = self.robot_pose['x']
+        robot_y = self.robot_pose['y']
+        robot_th = self.robot_pose['th']
+
+        dx = detection.x
+        dy = detection.y
+        cos_th = np.cos(robot_th)
+        sin_th = np.sin(robot_th)
+        gx = robot_x + dx * cos_th - dy * sin_th
+        gy = robot_y + dx * sin_th + dy * cos_th
+
+        detection.x = gx
+        detection.y = gy
+        return detection
+
 
     # def print_process(self):
     #     # Get the current process ID

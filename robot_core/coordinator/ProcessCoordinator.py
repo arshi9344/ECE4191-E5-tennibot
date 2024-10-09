@@ -117,6 +117,7 @@ class Coordinator:
             shared_image=self.latest_image,
             detection_results_q=self.detection_results_q,
             log_queue=self.log_queue,
+            robot_pose=self.robot_pose,
             log=self.log,
             camera_idx=0,
             use_simulated_video=False
