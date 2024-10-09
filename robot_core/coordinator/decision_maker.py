@@ -39,7 +39,6 @@ class DecisionMaker:
         # Shared multiprocessing manager variables
         self.robot_pose = robot_pose  # Shared dict with robot's current pose {'x': x, 'y': y, 'th': th}
         self.goal_position = goal_position  # Shared dict for the goal position
-        self.shared_data = shared_data # Shared dict with the latest detection results
         self.command_queue : StatefulCommandQueue = command_queue # Shared command cmd_queue
 
         # Shared ProcessCoordinator variables (these are plain old lists, dicts, not mp.manager objects)

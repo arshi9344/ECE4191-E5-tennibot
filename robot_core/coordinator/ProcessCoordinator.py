@@ -7,11 +7,8 @@ import traceback
 import queue
 from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 
-from notebooks.simulation.detector_tester import detection
 from robot_core.hardware.diff_drive_robot import DiffDriveRobot
 from robot_core.hardware.dimensions import COURT_XLIM, COURT_YLIM
-from robot_core.motion.tentacle_planner import TentaclePlanner
-from robot_core.control.PI_controller import PIController
 from robot_core.coordinator.commands import RobotCommands, StateWrapper, VisionCommands
 from robot_core.orchestration.scan_point_utils import ScanPointGenerator, ScanPoint
 from robot_core.orchestration.orchestrator_mp import Orchestrator

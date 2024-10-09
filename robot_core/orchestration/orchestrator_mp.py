@@ -182,7 +182,7 @@ class Orchestrator(mp.Process):
                 command = self.get_command()
 
                 if command == RobotCommands.STOP:
-                    print("### Orchestrator: in STOP command")
+                    # print("### Orchestrator: in STOP command")
                     self.robot.set_motor_speed(0, 0)
                     self.log_data(0,0,0,0,
                         Position(self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['z'], PositionTypes.ROBOT)
@@ -191,7 +191,7 @@ class Orchestrator(mp.Process):
 
 
                 elif command == RobotCommands.DRIVE:
-                    print("### Orchestrator: in DRIVE command")
+                    # print("### Orchestrator: in DRIVE command")
                     # Get the robot's goal position from the shared goal_position cmd_queue
                     goal = self.get_latest_goal()
                     res = self.movement(goal.x, goal.y, goal.th)
@@ -208,14 +208,14 @@ class Orchestrator(mp.Process):
                         self.mark_command_done()
 
                 elif command == RobotCommands.STAMP:
-                    print("### Orchestrator: in STAMP command")
+                    # print("### Orchestrator: in STAMP command")
                     # Stop the robot and collect the ball
                     self.robot.set_motor_speed(0, 0) # stop the robot if it isn't already
                     self.servo.stamp()  # Activate the collection mechanism
                     self.mark_command_done()
 
                 elif command == RobotCommands.DEPOSIT:
-                    print("### Orchestrator: in DEPOSIT command")
+                    # print("### Orchestrator: in DEPOSIT command")
                     # We're now depositing the balls, so insert servo control logic here
                     self.robot.set_motor_speed(0, 0)
                     self.servo.deposit()
@@ -228,7 +228,7 @@ class Orchestrator(mp.Process):
                     )
 
                 elif command == RobotCommands.ALIGN:
-                    print("### Orchestrator: in ALIGN command")
+                    # print("### Orchestrator: in ALIGN command")
 
                     # This should be run after the box has been detected, now aligning the robot via ultrasonic sensors
                     #                     self.robot.set_motor_speed(0, 0)
@@ -261,7 +261,7 @@ class Orchestrator(mp.Process):
                     )
 
                 elif command == RobotCommands.ROTATE:
-                    print("### Orchestrator: in ROTATE command")
+                    # print("### Orchestrator: in ROTATE command")
 
                     # The RobotCommands.ROTATE means that the robot should rotate on the spot to scan. For now, we always do 360 degrees.
                     # If we wanted to specify a specific angle, we would pass that in the command data, OR:

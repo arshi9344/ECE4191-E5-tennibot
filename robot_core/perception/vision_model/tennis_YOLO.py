@@ -23,7 +23,7 @@ calibration_data_path = os.path.join(current_dir, CALIB_MATRIX_PATH)
 model_path = os.path.join(current_dir, MODEL_PATH)
 
 calibration_data = np.load(calibration_data_path)
-model = YOLO(model_path)
+model = YOLO(model_path, verbose=False)
 
 
 class ObjectDetection:
