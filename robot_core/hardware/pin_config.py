@@ -30,7 +30,7 @@ ECHO = [6,26]     # GPIO 6 for Echo of Set 1 (right) and 26 for set 2 (left)
 
 # SERVO PINS
 DOOR_PIN = 16
-STAMP_PINS = [19,12] # STAMP PIN LEFT IN LIST IS
+STAMP_PINS = [21, 19] # STAMP PIN LEFT IN LIST IS... LACIE CHANGED THE ORDER OF THIS SO IT STAMPS DOWN FIRST THEN UP
 
 if __name__ == '__main__':
     try:

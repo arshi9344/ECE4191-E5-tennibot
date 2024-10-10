@@ -164,7 +164,6 @@ class Coordinator:
         # start with curr_scan_point = 0, prev_scan_point = None
         try:
             while self.shared_data['running']:
-                pass
                 # This is our main control loop, where all our main logic is. Potentially, we could set the goal_position dict with goals from
                 # our occupancy map / DecisionMaker class here.
 
