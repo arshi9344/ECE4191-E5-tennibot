@@ -158,7 +158,6 @@ class Orchestrator(mp.Process):
             ### Initialisation ###
             self.print_process()
             self.start_time = time.time()
-            self.servo.stamp()
 
             # Initialise Robot and Ultrasonic sensors
             if not self.simulated_robot:
@@ -171,6 +170,9 @@ class Orchestrator(mp.Process):
 
                 from robot_core.hardware.servo_controller import ServoController
                 self.servo = ServoController()
+
+                self.servo.stamp()
+
             else:
                 reality = 'simulated'
                 from robot_core.hardware.simulated_diff_drive_robot import DiffDriveRobot
