@@ -157,7 +157,7 @@ class DecisionMaker:
         ## The reason we can't use an 'after' transition for the above is is because we need to check this every loop iteration and reset the self.last_deposit_time and self.collected_balls,
         ## otherwise the robot will never leave the deposit state.
 
-        self._check_command_completion(verbose=True) # JUST FOR DEBUG
+        self._check_command_completion(verbose=False) # JUST FOR DEBUG
         self.decide_next_action() # method added by the state machine at runtime
 
         #TODO: Refine state completion check logic here
