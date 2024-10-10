@@ -34,7 +34,7 @@ class DecisionMaker:
             occupancy_map, # shared object instantiated inside ProcessCoordinator
             deposit_time_limit=8*60,
             max_capacity=4,
-            collection_box_location=(COURT_XLIM, COURT_YLIM)
+            collection_box_location=(COURT_XLIM, -COURT_YLIM +0.5)
     ):
         # Shared multiprocessing manager variables
         self.robot_pose = robot_pose  # Shared dict with robot's current pose {'x': x, 'y': y, 'th': th}
@@ -147,10 +147,10 @@ class DecisionMaker:
         self.machine = Machine(model=self, states=states, transitions=transitions, initial=RobotStates.IDLE, after_state_change='_issue_command')
 
 
-    def update(self):
+    def update(self, verbose=False):
         """Main update called in ProcessCoordinator control loop."""
         # print(f"Queue: {self.command_queue.show_entire_queue()}")
-        print(f'UPDATE: State before update (AKA what doing now): {self.state}')
+        if verbose: print(f'UPDATE: State before update (AKA what doing now): {self.state}')
         self._refresh_ball_goal() # this is to update the ball goal position to the nearest ball using most recent perception data
 
         self._check_deposit_completion() # this is to check if the robot has finished depositing balls.
