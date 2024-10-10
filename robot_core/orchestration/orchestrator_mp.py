@@ -158,6 +158,7 @@ class Orchestrator(mp.Process):
             ### Initialisation ###
             self.print_process()
             self.start_time = time.time()
+            self.servo.stamp()
 
             # Initialise Robot and Ultrasonic sensors
             if not self.simulated_robot:
