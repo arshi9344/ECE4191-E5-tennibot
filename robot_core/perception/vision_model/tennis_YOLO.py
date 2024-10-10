@@ -15,7 +15,6 @@ from typing import List, Tuple, Union
 
 from robot_core.perception.detection_results import BallDetection, BoxDetection
 
-# Define real tennis ball radius in meters (3.25 cm radius)
 MODEL_PATH = 'box_tennis.pt'
 CALIB_MATRIX_PATH = 'camera_calib7.npz'
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -158,13 +157,14 @@ class ObjectDetection:
 
 
 class TennisBallDetector(ObjectDetection):
-    TENNIS_BALL_RADIUS_M = 0.0325
+    TENNIS_BALL_RADIUS_M = 0.031 # 0.0325
 
-    def __init__(self, collection_zone, TENNIS_BALL_RADIUS_M=0.0325):
+    def __init__(self, collection_zone, camera_height=0.0, TENNIS_BALL_RADIUS_M=TENNIS_BALL_RADIUS_M):
         self.collection_zone = collection_zone
         self.TENNIS_BALL_RADIUS_M = TENNIS_BALL_RADIUS_M
-        super().__init__()
-
+        self.camera_height = camera_height 
+        super().__init__(camera_height=camera_height)
+         
     def get_object_radius(self, class_name: str):
         return self.TENNIS_BALL_RADIUS_M if class_name == 'tennis-ball' else None
 
@@ -186,11 +186,11 @@ class TennisBallDetector(ObjectDetection):
 
 class BoxDetector(ObjectDetection):
 
-    def __init__(self, deposition_zone, BOX_SIZE_M=0.16):
+    def __init__(self, deposition_zone, camera_height, BOX_SIZE_M=0.16):
         self.BOX_SIZE_M = BOX_SIZE_M  # assume 16 cm height for the box
         self.deposition_zone = deposition_zone
 
-        super().__init__()
+        super().__init__(camera_height=camera_height)
 
     def get_object_radius(self, class_name: str):
         return self.BOX_SIZE_M / 2 if class_name == 'box' else None

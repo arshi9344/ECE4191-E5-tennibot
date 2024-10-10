@@ -35,7 +35,7 @@ class VisionRunner(mp.Process):
             log_queue,
             collection_zone=(200, 150, 400, 350),
             deposition_zone=(200, 150, 400, 350),
-            camera_height=0.075,  #TODO: try subtracting tennis radius? 
+            camera_height= 0.054, # 0.075,  #TODO: try subtracting tennis radius? 
             log=False,
             scanning_interval=0.5,
             use_simulated_video=False
@@ -79,8 +79,8 @@ class VisionRunner(mp.Process):
         # Initialize the TennisBallDetector with camera height
         try:
             from robot_core.perception.vision_model.tennis_YOLO import TennisBallDetector, BoxDetector
-            self.ball_detector : TennisBallDetector = TennisBallDetector(collection_zone= self.collection_zone)
-            self.box_detector : BoxDetector = BoxDetector(deposition_zone=self.deposition_zone)
+            self.ball_detector : TennisBallDetector = TennisBallDetector(collection_zone= self.collection_zone, camera_height = self.camera_height, TENNIS_BALL_RADIUS_M=0.031)
+            self.box_detector : BoxDetector = BoxDetector(deposition_zone=self.deposition_zone, camera_height = self.camera_height)
 
         except Exception:
             print(f"Error loading TennisBallDetector: {traceback.print_exc()}")
