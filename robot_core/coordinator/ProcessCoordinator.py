@@ -199,9 +199,10 @@ class Coordinator:
 
                 # e.g., just call:
                 # self.decision_maker.manual_drive_to_ball() will change state to RobotStates.DRIVE_TO_BALL, issue a RobotCommand.DRIVE, and update the goal position to the nearest ball in the occupancy map
-                # self.manual_stamp will operate the stamping mechanism by issuing a RobotCommand.STAMP command
-                # self.manual_deposit will operate the deposit mechanism by issuing a RobotCommand.DEPOSIT command
+                # self.decision_maker.manual_stamp will operate the stamping mechanism by issuing a RobotCommand.STAMP command
+                # self.decision_maker.manual_stamp will operate the deposit mechanism by issuing a RobotCommand.DEPOSIT command
                 # etc.
+                # self.decision_maker.manual_stamp()
 
                 self.plot()
                 time.sleep(0.01)
