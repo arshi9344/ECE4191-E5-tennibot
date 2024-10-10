@@ -9,8 +9,8 @@ DOOR_PIN = 16
 STAMP_PINS = [21, 19] # STAMP PIN LEFT IN LIST IS 
 ####################################################
 #HARDWARE
-MIN_PULSE_WIDTH = 0.0006
-MAX_PULSE_WIDTH = 0.0023
+MIN_PULSE_WIDTH = 0.0009
+MAX_PULSE_WIDTH = 0.0021
 DOOR_OPEN_TIME = 10
 ####################################################
 
@@ -18,7 +18,7 @@ class ServoController:
     def __init__(self, door_pin = DOOR_PIN, min_pulse = MIN_PULSE_WIDTH, max_pulse = MAX_PULSE_WIDTH, stamp_pins = STAMP_PINS, debug = False):
         # Initialize the servos
         self.door_servo = AngularServo(door_pin, min_pulse_width = min_pulse, max_pulse_width = max_pulse)
-        self.stamp_servos = [AngularServo(pin) for pin in stamp_pins]
+        self.stamp_servos = [AngularServo(pin, min_pulse_width = min_pulse, max_pulse_width = max_pulse) for pin in stamp_pins]
         self.debug = debug
 
     def stamp(self):
@@ -57,5 +57,3 @@ if __name__ == "__main__":
     controller = ServoController(DOOR_PIN, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH, STAMP_PINS, debug = True)
     controller.stamp()  # Perform the stamping action
     controller.open_door(open_time=10)  # Open the door for 10 seconds
-
-    
