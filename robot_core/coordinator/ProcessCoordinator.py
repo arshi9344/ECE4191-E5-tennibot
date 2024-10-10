@@ -184,23 +184,6 @@ class Coordinator:
 
                 # Update the decision_maker and have it issue a new state
                 self.decision_maker.update()
-                print("Starting")
-                """
-                ball_detections = detection_results.get('ball_detection', [])
-                if ball_detections:
-                    self.logger.info(f"Detected {len(ball_detections)} balls")
-                    self.occupancy_map.update(ball_detections)  # Update occupancy map with the detected balls
-                    print(ball_detections)
-
-                    # Step 3: Manually trigger the decision maker to drive to the nearest ball
-                    self.logger.info("Issuing command to drive to nearest ball")
-                    self.decision_maker.manual_drive_to_ball()  # Trigger drive to ball
-
-                else:
-                    self.logger.info("No balls detected, robot remains idle")
-                    self.decision_maker.manual_idle()  # If no balls detected, set to idle
-                """
-                # self.decision_maker.update()
 
                 # Also, the cool thing about using the decision_maker is that if we want to directly control the robot
                 # and manually transition to a new state for testing / teleoperation purposes, just uncomment the self.decision_maker.update() line
