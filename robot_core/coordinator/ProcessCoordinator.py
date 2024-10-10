@@ -85,6 +85,7 @@ class Coordinator:
         self.latest_image = self.manager.dict({'time': None, 'frame': None})
 
         # Other variables
+        self.last_add_time = time.time()
         self.debug = debug
         self.court_dimensions = court_dimensions
         self.deposit_time_limit = deposit_time_limit
@@ -106,13 +107,6 @@ class Coordinator:
             matching_threshold=0.15, # in meters, the distance that balls are to be considered the same
             confidence_threshold=0.75  # 0 to 1, the minimum confidence for a ball to be considered
         )
-
-        self.occupancy_map.update([
-            BallDetection(1, -1, 0, 1, 0.9, True),
-            BallDetection(2, -1.5, 0, 1, 0.9, True),
-            BallDetection(3, 1, 0, 1, 0.9, True),
-            BallDetection(4, -1, 0, 1, 0.9, True)
-        ])
 
         # DecisionMaker
         self.decision_maker : DecisionMaker = DecisionMaker(
@@ -175,11 +169,22 @@ class Coordinator:
         if self.log: self.log_listener.stop()
 
     def run(self):
+        ball_idx = 0
+        balls = [
+            BallDetection(1, -1, 0, 1, 0.9, True),
+            BallDetection(2, -1.5, 0, 1, 0.9, True),
+            BallDetection(3, 1, 0, 1, 0.9, True),
+            BallDetection(4, -1, 0, 1, 0.9, True)
+        ]
         self.start() # Starting Orchestrator and VisionRunner
         try:
             while self.running.value:
                 # This is our main control loop, where we update each of our components (that are not processes).
-
+                if time.time() - self.last_add_time > 10:
+                    if ball_idx < len(balls):
+                        self.occupancy_map.update([balls[ball_idx]])
+                        ball_idx += 1
+                    self.last_add_time = time.time()
                 # Get data from the camera
                 try:
                     detection_results = self.detection_results_q.get_nowait()

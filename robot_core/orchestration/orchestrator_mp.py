@@ -330,7 +330,7 @@ class Orchestrator(mp.Process):
             self.logger.info("Keyboard interrupt. Stopping robot.")
 
         except Exception as e:
-            self.logger.error(f"Error in Orchestrator, Stopping robot: {e}")
+            self.logger.error(f"Error in Orchestrator, Stopping robot: {traceback.print_exc()}")
         if self.robot is not None and not self.simulated_robot:
             self.robot.set_motor_speed(0, 0)
         return
