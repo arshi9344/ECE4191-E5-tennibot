@@ -103,7 +103,7 @@ class Coordinator:
         self.occupancy_map : OccupancyMap = OccupancyMap(
             quadrant_bounds= (0, COURT_XLIM, 0, COURT_YLIM),
             matching_threshold=0.15, # in meters, the distance that balls are to be considered the same
-            confidence_threshold=0.7  # 0 to 1, the minimum confidence for a ball to be considered
+            confidence_threshold=0.75  # 0 to 1, the minimum confidence for a ball to be considered
         )
 
         # DecisionMaker
@@ -142,7 +142,8 @@ class Coordinator:
             log=self.log,
             camera_idx=0,
             use_simulated_video=False,
-            scanning_interval=0.5
+            scanning_interval=0.5,
+            camera_height=0
         )
 
 
