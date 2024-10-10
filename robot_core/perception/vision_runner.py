@@ -201,7 +201,7 @@ class VisionRunner(mp.Process):
 if __name__ == '__main__':
     manager = mp.Manager()
     shared_data = {
-        'running': True,
+        'running': manager.Value('b', True),
         'vision_command': StateWrapper(manager, VisionCommands, VisionCommands.DETECT_BALL),
         'robot_command': StateWrapper(manager, RobotCommands, RobotCommands.DRIVE)
     }

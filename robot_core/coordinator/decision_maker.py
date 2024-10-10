@@ -129,18 +129,17 @@ class DecisionMaker:
             # DRIVE_TO_DEPOSIT_BOX = 2
             # DRIVE_TO_SCAN_POINT = 3  # Exploring the court.
             # ROTATE_SCAN = 4
-            #
             # STAMP = 5
             # ALIGN = 6
             # DEPOSIT = 7
             {'trigger': 'manual_idle', 'source': '*', 'dest': RobotStates.IDLE },
-            {'trigger': 'manual_drive_to_ball', 'source': '*', 'dest': RobotStates.DRIVE_TO_BALL},
-            {'trigger': 'manual_drive_to_deposit_box', 'source': '*', 'dest': RobotStates.DRIVE_TO_DEPOSIT_BOX},
-            {'trigger': 'manual_drive_to_scan_point', 'source': '*', 'dest': RobotStates.DRIVE_TO_SCAN_POINT},
-            {'trigger': 'manual_rotate_scan', 'source': '*', 'dest': RobotStates.ROTATE_SCAN},
-            {'trigger': 'manual_stamp', 'source': '*', 'dest': RobotStates.STAMP},
-            {'trigger': 'manual_align', 'source': '*', 'dest': RobotStates.ALIGN},
-            {'trigger': 'manual_deposit', 'source': '*', 'dest': RobotStates.DEPOSIT},
+            {'trigger': 'manual_drive_to_ball', 'source': '*', 'dest': RobotStates.DRIVE_TO_BALL, 'conditions': ['_check_command_completion']},
+            {'trigger': 'manual_drive_to_deposit_box', 'source': '*', 'dest': RobotStates.DRIVE_TO_DEPOSIT_BOX, 'conditions': ['_check_command_completion']},
+            {'trigger': 'manual_drive_to_scan_point', 'source': '*', 'dest': RobotStates.DRIVE_TO_SCAN_POINT, 'conditions': ['_check_command_completion']},
+            {'trigger': 'manual_rotate_scan', 'source': '*', 'dest': RobotStates.ROTATE_SCAN, 'conditions': ['_check_command_completion']},
+            {'trigger': 'manual_stamp', 'source': '*', 'dest': RobotStates.STAMP, 'conditions': ['_check_command_completion']},
+            {'trigger': 'manual_align', 'source': '*', 'dest': RobotStates.ALIGN, 'conditions': ['_check_command_completion']},
+            {'trigger': 'manual_deposit', 'source': '*', 'dest': RobotStates.DEPOSIT, 'conditions': ['_check_command_completion']},
 
         ]
 
@@ -194,7 +193,11 @@ class DecisionMaker:
 
     def _check_command_completion(self, verbose=False) -> bool:
         return_val = False
-        if self.curr_command_id is not None:
+        if self.state == RobotStates.IDLE:
+            # If we're in IDLE state, then we can always transition to the next state
+            return_val = True
+
+        elif self.curr_command_id is not None:
             status = self.command_queue.get_status(self.curr_command_id)
             if status == CommandStatus.DONE:
                 # self.curr_command_id = None # Removed this because I don't want to change state here, seems messy
