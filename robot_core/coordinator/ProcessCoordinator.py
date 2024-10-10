@@ -217,7 +217,7 @@ class Coordinator:
         assert self.live_graphs is True, "Cannot plot if live_graphs is False"
         assert self.plotter is not None, "Cannot plot if self.plotter is None"
         if time.time() - self.last_graph_time > self.graph_interval and len(self.robot_graph_data) > 0:
-            print(f"ProcessCoordinator: Attempting to plot.")
+            # print(f"ProcessCoordinator: Attempting to plot.")
             self.last_graph_time = time.time()
             self.plotter.update_plot(self.robot_graph_data, self.latest_image, clear_output=self.clear_output)
 

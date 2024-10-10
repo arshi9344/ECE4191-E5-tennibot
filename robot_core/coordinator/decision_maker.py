@@ -54,7 +54,7 @@ class DecisionMaker:
         self.last_deposit_time = time.time()
         self.current_ball_stamp_attempts = 0
         self.current_ball_id = None
-        self.scan_point_gen = ScanPointGenerator()
+        self.scan_point_gen = ScanPointGenerator(flip_x = False, flip_y = True)
         self.curr_command_id = None
 
         # Define states and transitions
@@ -271,12 +271,12 @@ class DecisionMaker:
         return not self.occupancy_map.is_empty()
 
     # Returns True if robot should return to deposit box. Depends on time elapsed and capacity.
-    def should_return_to_deposit(self):
+    def should_return_to_deposit(self, verbose=False):
         time_condition = (time.time() - self.last_deposit_time) > self.deposit_time_limit
         capacity_condition = self.collected_balls >= self.max_capacity and self.collected_balls > 0
 
         if time_condition or capacity_condition:
-            print(f"Returning to deposit box; time condition: {time_condition}, capacity condition: {capacity_condition}")
+            if verbose: print(f"Returning to deposit box; time condition: {time_condition}, capacity condition: {capacity_condition}")
             return True
         return False
 
