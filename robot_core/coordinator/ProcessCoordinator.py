@@ -174,7 +174,9 @@ class Coordinator:
                 # Get data from the camera
                 try:
                     detection_results = self.detection_results_q.get_nowait()
-                    self.occupancy_map.update(detection_results['ball_detection'])
+                    ball_detections = detection_results['ball_detection']
+                    self.occupancy_map.update(ball_detections)
+                    print(f"Coordinator: Ball detections: {ball_detections}")
                 except queue.Empty:
                     pass
                 # TODO: DO something with the box detection results here as well
