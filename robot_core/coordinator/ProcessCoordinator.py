@@ -174,7 +174,6 @@ class Coordinator:
                 self.occupancy_map.update(detection_results.get('ball_detection'))
                 # TODO: DO something with the box detection results here as well
 
-
                 # Update the decision_maker and have it issue a new state
                 self.decision_maker.update()
 

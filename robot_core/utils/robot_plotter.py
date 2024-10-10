@@ -234,7 +234,7 @@ class RobotPlotter:
         self.ax3.relim()
         self.ax3.autoscale_view()
 
-    def update_position_plot(self, new_data, only_show_recent=True, recent_thresh=1000):
+    def update_position_plot(self, new_data, only_show_recent=False, recent_thresh=1000):
         if not new_data:
             return
 

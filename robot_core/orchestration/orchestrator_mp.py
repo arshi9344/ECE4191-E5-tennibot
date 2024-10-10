@@ -226,6 +226,7 @@ class Orchestrator(mp.Process):
                         0,
                         Position(self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['z'], PositionTypes.ROBOT)
                     )
+                    self.mark_command_done()
 
                 elif command == RobotCommands.ALIGN:
                     # print("### Orchestrator: in ALIGN command")
@@ -250,7 +251,7 @@ class Orchestrator(mp.Process):
 
                     elif check_return == 'arrived':
                         # In the robot state cmd_queue, notify the cmd_queue itself that the object has been processed
-                        pass
+                        self.mark_command_done()
 
                     self.log_data(
                         0,
@@ -261,13 +262,16 @@ class Orchestrator(mp.Process):
                     )
 
                 elif command == RobotCommands.ROTATE:
-                    # print("### Orchestrator: in ROTATE command")
 
                     # The RobotCommands.ROTATE means that the robot should rotate on the spot to scan. For now, we always do 360 degrees.
                     # If we wanted to specify a specific angle, we would pass that in the command data, OR:
                     #    we add an additional position type, like PositionTypes.ROTATE, and set the desired angular rotation as the .th (angle) in the Position object.
                     #    then, inside this method, we just use the angle from the position object, and not care about the Position.x and Position.y
-                    pass
+
+                    # TODO: Insert rotate logic here!!!
+
+                    # For now, we just immediately mark this command as done.
+                    self.mark_command_done()
 
 
                 # Updating globally shared robot pose
