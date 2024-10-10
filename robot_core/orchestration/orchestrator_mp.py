@@ -269,42 +269,37 @@ class Orchestrator(mp.Process):
                         Position(self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['z'], PositionTypes.ROBOT)
                     )
 
-                elif command == RobotCommands.ROTATE:
 
+                elif command == RobotCommands.ROTATE:
                     # The RobotCommands.ROTATE means that the robot should rotate on the spot to scan. For now, we always do 360 degrees.
                     # If we wanted to specify a specific angle, we would pass that in the command data, OR:
                     #    we add an additional position type, like PositionTypes.ROTATE, and set the desired angular rotation as the .th (angle) in the Position object.
                     #    then, inside this method, we just use the angle from the position object, and not care about the Position.x and Position.y
-
-                    # TODO: Insert rotate logic here!!!
-                    # Set the angle to rotate by (72 degrees in radians)
-                    angle_to_rotate = (2 * np.pi) / 8  # 45-degree rotation
+                    # Rotate by 72 degrees in radians (360 / 5)
+                    angle_to_rotate = (2 * np.pi) / 5  # 72-degree rotation
 
                     # On the first call, initialize the starting angle and target angle
-                    if self.starting_angle == None:
+                    if self.starting_angle is None:
                         self.starting_angle = self.robot.th  # Store the initial angle
-                        self.theta_target = (self.starting_angle + angle_to_rotate)
-                        print(f"Starting rotation. Initial theta: {np.rad2deg(self.starting_angle):.2f} degrees, Target theta: {np.rad2deg(self.theta_target):.2f} degrees")
+                        self.theta_target = (self.starting_angle + angle_to_rotate) % (2 * np.pi)
+                        # print(f"Starting rotation. Initial theta: {np.rad2deg(self.starting_angle):.2f} degrees, Target theta: {np.rad2deg(self.theta_target):.2f} degrees")
+
+                    # Calculate the current angle and handle angle wraparound
+                    current_angle = self.robot.th
+                    angle_diff = (self.theta_target - current_angle + np.pi) % (
+                                2 * np.pi) - np.pi  # Normalize to [-pi, pi]
 
                     # Check if the current angle has reached the target (with tolerance)
-                    current_angle = self.robot.th
-                    if abs(current_angle - self.theta_target) > 0.01:  # Tolerance of 0.01 radians (~0.57 degrees)
+                    if abs(angle_diff) > 0.02:  # Tolerance of 0.02 radians (~1 degree)
                         # Rotate by setting the motor speeds for in-place rotation
                         self.robot.pose_update(-0.5, 0.5)
-
                         # Debugging output to show the progress
-                        print(f"Rotating... Current angle: {np.rad2deg(current_angle):.2f} degrees")
+                        # print(f"Rotating... Current angle: {np.rad2deg(current_angle):.2f} degrees. Diff: {np.rad2deg(angle_diff):.2f} degrees")
 
                     else:
-                        # Stop the robot when the target angle is reached
-                        self.robot.pose_update(0, 0)
-                        print("Rotation complete.")
-
-                        # Clear the starting angle and theta_target attributes for future rotations
+                        # Reset the starting_angle once rotation is complete
+                        print(f"Rotation complete. Final angle: {np.rad2deg(current_angle):.2f} degrees")
                         self.starting_angle = None
-                        self.theta_target = None
-
-                        # Mark the command as done
                         self.mark_command_done()
 
 
