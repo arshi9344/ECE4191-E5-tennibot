@@ -4,7 +4,7 @@ import glob
 
 # Define the dimensions of the checkerboard (number of inner corners per a chessboard row and column)
 CHECKERBOARD = (9, 6)  # Update this to match your checkerboard
-square_size = 0.025  # Update this to the actual square size in meters
+square_size = 0.023  # Update this to the actual square size in meters
 
 # Termination criteria for corner refinement
 criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.00001)
@@ -19,7 +19,7 @@ imgpoints = []  # 2D points in image plane
 valid_images = []
 
 # Load calibration images (update path to your images)
-images = glob.glob('images/images_calib6/*.jpg')
+images = glob.glob('images/images_calib7/*.jpg')
 print(f"Found {len(images)} images.")
 
 for fname in images:
