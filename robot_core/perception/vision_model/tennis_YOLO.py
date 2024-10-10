@@ -17,7 +17,7 @@ from robot_core.perception.detection_results import BallDetection, BoxDetection
 
 # Define real tennis ball radius in meters (3.25 cm radius)
 MODEL_PATH = 'box_tennis.pt'
-CALIB_MATRIX_PATH = 'calib6_matrix.npz'
+CALIB_MATRIX_PATH = 'camera_calib7.npz'
 current_dir = os.path.dirname(os.path.abspath(__file__))
 calibration_data_path = os.path.join(current_dir, CALIB_MATRIX_PATH)
 model_path = os.path.join(current_dir, MODEL_PATH)

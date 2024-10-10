@@ -35,7 +35,7 @@ class VisionRunner(mp.Process):
             log_queue,
             collection_zone=(200, 150, 400, 350),
             deposition_zone=(200, 150, 400, 350),
-            camera_height=0.02,
+            camera_height=0.075,  #TODO: try subtracting tennis radius? 
             log=False,
             scanning_interval=0.5,
             use_simulated_video=False
