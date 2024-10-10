@@ -360,7 +360,7 @@ class Orchestrator(mp.Process):
     def get_command(self) -> Optional[RobotCommands]:
         if not self.robot_command_q.empty():
             self.current_command, self.curr_command_id = self.robot_command_q.get()
-            print(f"--#### Orchestrator: got NEW command {self.current_command}")
+            # print(f"--#### Orchestrator: got NEW command {self.current_command}")
         return self.current_command
 
     # Marks the current command as done in the robot_command_q.
@@ -370,7 +370,7 @@ class Orchestrator(mp.Process):
             self.robot_command_q.mark_done(self.curr_command_id)
             self.curr_command_id = None
             self.current_command = None
-            print(f"----- Orchestrator: command {cmd_name} marked DONE")
+            # print(f"----- Orchestrator: command {cmd_name} marked DONE")
 
     def print_process(self):
         # Get the current process ID

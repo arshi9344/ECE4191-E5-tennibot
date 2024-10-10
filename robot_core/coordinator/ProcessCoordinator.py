@@ -41,7 +41,10 @@ class Coordinator:
             debug=False,
             plot_time_window=5,
             efficient_plotting=False,
-            save_figs=False
+            save_figs=False,
+            deposit_time_limit=8*60, # seconds
+            max_ball_capacity=5
+
     ):
         self.manager = Manager()
         self.running = self.manager.Value('b', True)
@@ -84,6 +87,8 @@ class Coordinator:
         # Other variables
         self.debug = debug
         self.court_dimensions = court_dimensions
+        self.deposit_time_limit = deposit_time_limit
+        self.max_ball_capacity = max_ball_capacity
         self.scan_point_generator = ScanPointGenerator(x_lim=4.12, y_lim=5.48, scan_radius=2, flip_x=True, flip_y=False)
         self.scan_points = self.scan_point_generator.points
         self.curr_scan_point = 0
@@ -100,23 +105,26 @@ class Coordinator:
 
         # Instantiating child classes; DecisionMaker and OccupancyMap
         # OccupancyMap
-        self.occupancy_map = OccupancyMap(
+        self.occupancy_map : OccupancyMap = OccupancyMap(
             quadrant_bounds= (0, COURT_XLIM, 0, COURT_YLIM),
             matching_threshold=0.15, # in meters, the distance that balls are to be considered the same
             confidence_threshold=0.7  # 0 to 1, the minimum confidence for a ball to be considered
         )
 
         # DecisionMaker
-        self.decision_maker = DecisionMaker(
+        self.decision_maker : DecisionMaker = DecisionMaker(
             robot_pose=self.robot_pose,
             goal_position=self.goal_position,
             command_queue=self.robot_command_q,
             occupancy_map=self.occupancy_map,
+            deposit_time_limit=self.deposit_time_limit,
+            max_capacity=self.max_ball_capacity,
+
         )
 
         # Instantiating child processes
         # Orchestrator
-        self.orchestrator = Orchestrator(
+        self.orchestrator : Orchestrator = Orchestrator(
             running=self.running,
             robot_command_q=self.robot_command_q,
             goal_position=self.goal_position,
@@ -129,7 +137,7 @@ class Coordinator:
         )
 
         # VisionRunner
-        self.vision_runner = VisionRunner(
+        self.vision_runner : VisionRunner = VisionRunner(
             running=self.running,
             vision_command=self.vision_command,
             shared_image=self.latest_image,
