@@ -215,6 +215,7 @@ class Orchestrator(mp.Process):
                     # Stop the robot and collect the ball
                     self.robot.pose_update(0, 0) # stop the robot if it isn't already
                     self.servo.stamp()  # Activate the collection mechanism
+                    ## NEED A WAY TO CHECK IF BALL IS STILL PRESENT TO CONTROL IF ITS REMOVED FROM QUEUE (in process coordinator)
                     self.mark_command_done()
 
                 elif command == RobotCommands.DEPOSIT:
@@ -239,7 +240,6 @@ class Orchestrator(mp.Process):
 
                     # Once in desired location to begin scanning the drop off box
                     check_return = self.ultrasonic.check_alignment(depot_distance_threshold=15, alignment_tolerance=1.2)
-                    print(f'woop: {check_return}')
                     if check_return[0] == 'distance':
                         # Drive set distance in a straight line
                         distance = check_return[1]
@@ -253,8 +253,10 @@ class Orchestrator(mp.Process):
                         print(angle_rad)
                         self.movement(self.robot.x,self.robot.y,self.robot.th + angle_rad )
 
-                    elif check_return == 'arrived':
+                    elif check_return[0] == 'arrived':
                         # In the robot state cmd_queue, notify the cmd_queue itself that the object has been processed
+                        distance = check_return[1] - 2
+                        self.movement(self.robot.x + distance,self.robot.y,self.robot.th)
                         self.mark_command_done()
 
                     self.log_data(
@@ -274,7 +276,7 @@ class Orchestrator(mp.Process):
 
                     # TODO: Insert rotate logic here!!!
                     # Set the angle to rotate by (72 degrees in radians)
-                    angle_to_rotate = (2 * np.pi) / 5  # 72-degree rotation
+                    angle_to_rotate = (2 * np.pi) / 8  # 45-degree rotation
 
                     # On the first call, initialize the starting angle and target angle
                     if self.starting_angle == None:
@@ -361,17 +363,20 @@ class Orchestrator(mp.Process):
 
         if goal.type == PositionTypes.BALL:
             # PLACEHOLDER PLACEHOLDER PLACEHOLDER. DEFINITELY NOT FINAL. WE NEED TO CONSIDER THE ANGLE TOO.
+            # when driving to the ball we should first angle ourselves appropriately before driving straight, everything seems to be handled easier without tentacle planner but idk
+            # otherwise we will have to re-allign afterwards
             # THESE SHOULD NOT BE MAGIC NUMBERS. THEY ALSO NEED TO BE LESS THAN THE TOLERANCES IN TENTACLEPLANNER
-            if distance_to_goal < 0.12:  # 35cm
+            if distance_to_goal > 0.22 or distance_to_goal <0.36:  # anywhere from 22cm to 36cm
                 return True
 
         elif goal.type == PositionTypes.SCAN_POINT:
             # PLACEHOLDER PLACEHOLDER PLACEHOLDER. DEFINITELY NOT FINAL
-            if distance_to_goal < 0.12:
+            if distance_to_goal < 0.01:
                 return True
 
         elif goal.type == PositionTypes.BOX:
             # PLACEHOLDER PLACEHOLDER PLACEHOLDER. DEFINITELY NOT FINAL
+            # once the
             if distance_to_goal < 0.12:
                 return True
 
