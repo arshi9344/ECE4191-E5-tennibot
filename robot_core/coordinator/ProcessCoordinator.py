@@ -171,7 +171,7 @@ class Coordinator:
 
                 # Get data from the camera
                 detection_results = self.detection_results_q.get()
-                self.occupancy_map.update(detection_results.get(['ball_detection']))
+                self.occupancy_map.update(detection_results.get('ball_detection'))
                 # TODO: DO something with the box detection results here as well
 
 
