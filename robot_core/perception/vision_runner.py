@@ -35,7 +35,7 @@ class VisionRunner(mp.Process):
             log_queue,
             collection_zone=(200, 150, 400, 350),
             deposition_zone=(200, 150, 400, 350),
-            camera_height= 0.054, # 0.075,  #TODO: try subtracting tennis radius? 
+            camera_height= 0, #0.054, # 0.075,  #TODO: try subtracting tennis radius?
             log=False,
             scanning_interval=1,
             use_simulated_video=False
@@ -121,7 +121,8 @@ class VisionRunner(mp.Process):
                         ball_detections = [self._estimate_ball_global_position(detection) for detection in ball_detections]
 
                         if ball_detections or box_detections:
-                            combined_frame = self.combine_frames(ball_frame, box_frame)
+                            combined_frame = ball_frame
+                            # combined_frame = self.combine_frames(ball_frame, box_frame)
                             
                             self.detection_results_q.put({
                                 'time': self.last_update,

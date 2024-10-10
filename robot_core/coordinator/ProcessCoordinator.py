@@ -152,8 +152,8 @@ class Coordinator:
         self.print_process()
         self.orchestrator.start()
         self.vision_runner.start()
-        time.sleep(20)
         self.vision_command.set(VisionCommands.DETECT_BALL)  # VisionRunner will constantly take pictures every 5 seconds and run it through the ML model. Results will be published to the self.detection_results_q
+        time.sleep(20)
         self.decision_maker.update()
         if self.live_graphs: self.plotter.start()
 
