@@ -196,8 +196,7 @@ class VisionRunner(mp.Process):
     #     process = psutil.Process(pid)
     #     print(f"Orchestrator Process (PID: {pid}), {self.name}, with: {process.num_threads()} threads")
 
-
-# Test usage
+# Test usage in __main__
 if __name__ == '__main__':
     manager = mp.Manager()
     shared_data = {
@@ -212,7 +211,7 @@ if __name__ == '__main__':
     shared_image = manager.dict({'time': None, 'frame': None})
 
     vision_runner = VisionRunner(
-        running = shared_data['running'],
+        running=shared_data['running'],
         vision_command=shared_data['vision_command'],
         robot_pose=manager.dict({'x': 0, 'y': 0, 'th': 0}),
         shared_image=shared_image,
@@ -221,15 +220,34 @@ if __name__ == '__main__':
         camera_idx=0,
         log=False
     )
+
+    plt.ion()
+    fig, ax = plt.subplots()
+
     try:
         vision_runner.start()
+
+        # Continuously check for new detection results in the queue
         while True:
             if shared_image['frame'] is not None:
-                plt.imshow(shared_image['frame'])
-            plt.show()
+                ax.clear()
+                ax.imshow(shared_image['frame'])
+                plt.draw()
+                plt.pause(0.1)
+
+            # Retrieve BallDetection from the queue
+            try:
+                results = detection_results_q.get_nowait()  # Non-blocking
+                ball_detections = results.get('ball_detection', [])
+
+                for detection in ball_detections:
+                    print(f"Detected Ball - X: {detection.x:.2f}, Y: {detection.y:.2f}, "
+                          f"Angle: {detection.angle:.2f}, Distance: {detection.total_distance:.2f}, "
+                          f"Confidence: {detection.confidence:.2f}, In Collection Zone: {detection.in_collection_zone}")
+            except queue.Empty:
+                pass
+
             time.sleep(1)
-
-
 
     except KeyboardInterrupt:
         print("Keyboard Interrupt")
