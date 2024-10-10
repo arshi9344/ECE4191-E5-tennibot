@@ -70,6 +70,8 @@ class Orchestrator(mp.Process):
         self.current_command = None
         self.simulated_robot: bool = simulated_robot  # boolean
         self.debug = debug
+        self.starting_angle = None
+        self.theta_target = None
 
         self.logger.info(f"Initialising Orchestrator:")
         self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
@@ -183,7 +185,7 @@ class Orchestrator(mp.Process):
 
                 if command == RobotCommands.STOP:
                     # print("### Orchestrator: in STOP command")
-                    self.robot.set_motor_speed(0, 0)
+                    self.robot.pose_update(0, 0)
                     self.log_data(0,0,0,0,
                         Position(self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['z'], PositionTypes.ROBOT)
                     )
@@ -210,14 +212,14 @@ class Orchestrator(mp.Process):
                 elif command == RobotCommands.STAMP:
                     # print("### Orchestrator: in STAMP command")
                     # Stop the robot and collect the ball
-                    self.robot.set_motor_speed(0, 0) # stop the robot if it isn't already
+                    self.robot.pose_update(0, 0) # stop the robot if it isn't already
                     self.servo.stamp()  # Activate the collection mechanism
                     self.mark_command_done()
 
                 elif command == RobotCommands.DEPOSIT:
                     # print("### Orchestrator: in DEPOSIT command")
                     # We're now depositing the balls, so insert servo control logic here
-                    self.robot.set_motor_speed(0, 0)
+                    self.robot.pose_update(0, 0)
                     self.servo.deposit()
                     self.log_data(
                         0,
@@ -269,9 +271,35 @@ class Orchestrator(mp.Process):
                     #    then, inside this method, we just use the angle from the position object, and not care about the Position.x and Position.y
 
                     # TODO: Insert rotate logic here!!!
+                    # Set the angle to rotate by (72 degrees in radians)
+                    angle_to_rotate = (2 * np.pi) / 5  # 72-degree rotation
 
-                    # For now, we just immediately mark this command as done.
-                    self.mark_command_done()
+                    # On the first call, initialize the starting angle and target angle
+                    if self.starting_angle == None:
+                        self.starting_angle = self.robot.th  # Store the initial angle
+                        self.theta_target = (self.starting_angle + angle_to_rotate)
+                        print(f"Starting rotation. Initial theta: {np.rad2deg(self.starting_angle):.2f} degrees, Target theta: {np.rad2deg(self.theta_target):.2f} degrees")
+
+                    # Check if the current angle has reached the target (with tolerance)
+                    current_angle = self.robot.th
+                    if abs(current_angle - self.theta_target) > 0.01:  # Tolerance of 0.01 radians (~0.57 degrees)
+                        # Rotate by setting the motor speeds for in-place rotation
+                        self.robot.pose_update(-0.5, 0.5)
+
+                        # Debugging output to show the progress
+                        print(f"Rotating... Current angle: {np.rad2deg(current_angle):.2f} degrees")
+
+                    else:
+                        # Stop the robot when the target angle is reached
+                        self.robot.pose_update(0, 0)
+                        print("Rotation complete.")
+
+                        # Clear the starting angle and theta_target attributes for future rotations
+                        self.starting_angle = None
+                        self.theta_target = None
+
+                        # Mark the command as done
+                        self.mark_command_done()
 
 
                 # Updating globally shared robot pose
