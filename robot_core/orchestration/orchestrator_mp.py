@@ -220,7 +220,7 @@ class Orchestrator(mp.Process):
                     # print("### Orchestrator: in DEPOSIT command")
                     # We're now depositing the balls, so insert servo control logic here
                     self.robot.pose_update(0, 0)
-                    self.servo.deposit()
+                    self.servo.open_door()
                     self.log_data(
                         0,
                         0,
@@ -243,13 +243,14 @@ class Orchestrator(mp.Process):
                         # Drive set distance in a straight line
                         distance = check_return[1]
                         print(distance)
-                        # self.robot.set_motor_speed(1,1)
+                        self.robot.pose_update(1,1)
+
 
                     elif check_return[0] == 'rotate':
                         # Rotate on the spot by the desired angle
                         angle_rad = check_return[1]
                         print(angle_rad)
-                        # self.movement(self.robot.x,self.robot.y,self.robot.th + angle_rad )
+                        self.movement(self.robot.x,self.robot.y,self.robot.th + angle_rad )
 
                     elif check_return == 'arrived':
                         # In the robot state cmd_queue, notify the cmd_queue itself that the object has been processed
