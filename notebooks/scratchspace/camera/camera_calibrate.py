@@ -85,10 +85,12 @@ if valid_objpoints and valid_imgpoints:
         valid_objpoints, valid_imgpoints, gray.shape[::-1], None, None
     )
     print("Recalibration completed. Saving parameters...")
-
+    print(f"Camera matrix:\n{camera_matrix}")
+    print(f"Distortion coefficients:\n{dist_coeffs}")
     # Save calibration data
-    np.savez('camera_calibration.npz', camera_matrix=camera_matrix, dist_coeffs=dist_coeffs, rvecs=rvecs, tvecs=tvecs)
+    np.savez('camera_calib7.npz', camera_matrix=camera_matrix, dist_coeffs=dist_coeffs, rvecs=rvecs, tvecs=tvecs)
     print("Calibration data saved.")
+
 
     # Calculate total reprojection error after recalibration
     mean_error = 0
