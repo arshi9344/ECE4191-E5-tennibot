@@ -37,7 +37,7 @@ class VisionRunner(mp.Process):
             deposition_zone=(200, 150, 400, 350),
             camera_height= 0.054, # 0.075,  #TODO: try subtracting tennis radius? 
             log=False,
-            scanning_interval=0.5,
+            scanning_interval=1,
             use_simulated_video=False
     ):
         super().__init__()
@@ -114,7 +114,8 @@ class VisionRunner(mp.Process):
 
                         # Run the detection model
                         ball_detections, ball_frame = self.ball_detector.detect(ball_frame)
-                        box_detections, box_frame = self.box_detector.detect(box_frame)
+                        # box_detections, box_frame = self.box_detector.detect(box_frame)
+                        box_detections = []
 
                         # Convert the relative position of the ball to global position
                         ball_detections = [self._estimate_ball_global_position(detection) for detection in ball_detections]

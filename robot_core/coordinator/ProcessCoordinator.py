@@ -69,7 +69,6 @@ class Coordinator:
                 - Once the ball is collected, Coordinator then inserts the next scanning point into goal_position
 
         """
-        # [[x, y, th], [x, y, th] ]
 
         # Robot graph data
         # robot_graph_data may ONLY be written to by Orchestrator and read by everything else.
@@ -89,10 +88,6 @@ class Coordinator:
         self.court_dimensions = court_dimensions
         self.deposit_time_limit = deposit_time_limit
         self.max_ball_capacity = max_ball_capacity
-        self.scan_point_generator = ScanPointGenerator(x_lim=4.12, y_lim=5.48, scan_radius=2, flip_x=True, flip_y=False)
-        self.scan_points = self.scan_point_generator.points
-        self.curr_scan_point = 0
-        self.prev_scan_point = None
         # Setting up Logging
         self.log = log
         self.log_queue = self.manager.Queue(-1)
@@ -146,20 +141,20 @@ class Coordinator:
             log_queue=self.log_queue,
             log=self.log,
             camera_idx=0,
-            use_simulated_video=False
+            use_simulated_video=False,
+            scanning_interval=0.5
         )
 
 
     def start(self):
+        print(f"Starting process coordinator. Wait about 10 seconds.")
         self.print_process()
         self.orchestrator.start()
-
+        time.sleep(2)
         self.vision_runner.start()
+        time.sleep(2)
         self.vision_command.set(VisionCommands.DETECT_BALL)  # VisionRunner will constantly take pictures every 5 seconds and run it through the ML model. Results will be published to the self.detection_results_q
-
-
         self.decision_maker.update()
-
         if self.live_graphs: self.plotter.start()
 
 
@@ -178,13 +173,15 @@ class Coordinator:
                 # This is our main control loop, where we update each of our components (that are not processes).
 
                 # Get data from the camera
-                detection_results = self.detection_results_q.get()
-                self.occupancy_map.update(detection_results.get('ball_detection'))
+                try:
+                    detection_results = self.detection_results_q.get_nowait()
+                    self.occupancy_map.update(detection_results['ball_detection'])
+                except queue.Empty:
+                    pass
                 # TODO: DO something with the box detection results here as well
 
                 # Update the decision_maker and have it issue a new state
                 self.decision_maker.update()
-
                 # Also, the cool thing about using the decision_maker is that if we want to directly control the robot
                 # and manually transition to a new state for testing / teleoperation purposes, just uncomment the self.decision_maker.update() line
                 # as this stops the decision_maker from updating state transitions automatically, and instead just use one of:
@@ -203,9 +200,7 @@ class Coordinator:
                 # self.decision_maker.manual_stamp will operate the deposit mechanism by issuing a RobotCommand.DEPOSIT command
                 # etc.
                 # self.decision_maker.manual_stamp()
-
                 self.plot()
-                time.sleep(0.01)
 
         except KeyboardInterrupt:
             self.logger.info("Exiting Coordinator")
@@ -222,6 +217,7 @@ class Coordinator:
         assert self.live_graphs is True, "Cannot plot if live_graphs is False"
         assert self.plotter is not None, "Cannot plot if self.plotter is None"
         if time.time() - self.last_graph_time > self.graph_interval and len(self.robot_graph_data) > 0:
+            print(f"ProcessCoordinator: Attempting to plot.")
             self.last_graph_time = time.time()
             self.plotter.update_plot(self.robot_graph_data, self.latest_image, clear_output=self.clear_output)
 
