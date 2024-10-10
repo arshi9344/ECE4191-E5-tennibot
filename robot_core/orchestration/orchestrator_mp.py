@@ -315,13 +315,38 @@ class Orchestrator(mp.Process):
         )
         self.robot_graph_data.append(log_point)
 
+    #### PLACEHOLDER PLACEHOLDER PLACEHOLDER PLACEHOLDER NEED TO EDIT
     def is_goal_reached(self, goal: Position) -> bool:
         x, y, th = self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['th']
 
         # TODO: This function needs to be aware of the Position type. If it's the box, then it needs to be closer. If it's a ball, it needs to be 10-14 inches behind. etc.
         #
-        # if goal.type == PositionTypes.BOX:
-        pass
+        # there's a is_goal_reached function in orchestrator_mp that should check this using different criteria depending on the type (PositionTypes) of the goal (Position) that's currently set (set in goal_position, which is the shared multiprocessing.manager.dict()).
+        #
+        # For example: If it's a ball, we need to make sure we're 8-14 inches behind it but also pointing towards it.
+        # If it's a box, we need to make sure that we're close enough for the ultrasonic sensors to take over before returning True. I assume this would be like max 30cm or something.
+        # If it's a scan point or a ball position, then we apply the same type of check - are we close enough given some sort of tolerance
+        distance_to_goal = np.hypot(goal.x - self.robot.x, goal.y - self.robot.y)
+        angle_to_goal = np.arctan2(goal.y - self.robot.y, goal.x - self.robot.x) - self.robot.th # TODO: MAKE SURE THIS CALCULATION IS RIGHT
+
+        if goal.type == PositionTypes.BALL:
+            # PLACEHOLDER PLACEHOLDER PLACEHOLDER. DEFINITELY NOT FINAL. WE NEED TO CONSIDER THE ANGLE TOO.
+            # THESE SHOULD NOT BE MAGIC NUMBERS. THEY ALSO NEED TO BE LESS THAN THE TOLERANCES IN TENTACLEPLANNER
+            if distance_to_goal < 0.12:  # 35cm
+                return True
+
+        elif goal.type == PositionTypes.SCAN_POINT:
+            # PLACEHOLDER PLACEHOLDER PLACEHOLDER. DEFINITELY NOT FINAL
+            if distance_to_goal < 0.12:
+                return True
+
+        elif goal.type == PositionTypes.BOX:
+            # PLACEHOLDER PLACEHOLDER PLACEHOLDER. DEFINITELY NOT FINAL
+            if distance_to_goal < 0.12:
+                return True
+
+        return False
+
 
     def get_latest_goal(self) -> Optional[Position]:
         res = self.goal_position.get('goal')

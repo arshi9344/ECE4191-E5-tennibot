@@ -99,7 +99,7 @@ class ObjectDetection:
             return [], np.array([])
 
         undistorted_frame = self.undistort(frame)
-        results = self.model(undistorted_frame)  # Run inference
+        results = self.model(undistorted_frame, verbose=False)  # Run inference
 
         detections = []
 
