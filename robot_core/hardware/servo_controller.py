@@ -22,7 +22,7 @@ class ServoController:
     def __init__(self, door_pin = DOOR_PIN, min_pulse = MIN_PULSE_WIDTH, max_pulse = MAX_PULSE_WIDTH, stamp_pins = STAMP_PINS, debug = False):
         # Initialize the servos
         self.door_servo = AngularServo(door_pin, min_pulse_width = min_pulse, max_pulse_width = max_pulse)
-        self.stamp_servos = [AngularServo(pin) for pin in stamp_pins]
+        self.stamp_servos = [AngularServo(pin, min_pulse_width=min_pulse, max_pulse_width=max_pulse) for pin in stamp_pins]
         self.debug = debug
 
     def stamp(self):
