@@ -89,8 +89,6 @@ class Coordinator:
         self.court_dimensions = court_dimensions
         self.deposit_time_limit = deposit_time_limit
         self.max_ball_capacity = max_ball_capacity
-        self.scan_point_generator = ScanPointGenerator(x_lim=4.12, y_lim=5.48, scan_radius=2, flip_x=True, flip_y=False)
-        self.scan_points = self.scan_point_generator.points
         self.curr_scan_point = 0
         self.prev_scan_point = None
         # Setting up Logging

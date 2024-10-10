@@ -11,11 +11,19 @@ import psutil
 from queue import Empty
 import traceback
 from typing import Optional
+import cv2
 
 from matplotlib import pyplot as plt
 
 from robot_core.control.PI_controller import PIController
+from robot_core.hardware.diff_drive_robot import DiffDriveRobot
+from robot_core.hardware.dimensions import COURT_YLIM, COURT_XLIM
 from robot_core.motion.tentacle_planner import TentaclePlanner
+from robot_core.perception.detection_results import BallDetection
+from robot_core.perception.ultrasonic_sensors import UltrasonicSensor
+from robot_core.hardware.servo_controller import ServoController
+from robot_core.perception.vision_model.tennis_YOLO import TennisBallDetector
+
 from robot_core.utils.command_utils import StatefulCommandQueue
 from robot_core.utils.logging_utils import setup_logging
 from robot_core.utils.robot_log_point import RobotLogPoint
@@ -31,159 +39,75 @@ Orchestrator is DUMB: It gets a command, acts upon it, and then notifies the Sta
 
 """
 
-class Orchestrator(mp.Process):
+class Orchestrator:
     def __init__(
             self,
-            running, # the running flag, which is mp.manager.Value('b', True) initalised in ProcessCoordinator
-            robot_command_q : StatefulCommandQueue, # the robot command queue, which is a StatefulCommandQueue object initalised in ProcessCoordinator
-            goal_position, # the goal position, which is a mp.manager.dict initalised in ProcessCoordinator
-            robot_pose, # the robot pose, which is a mp.manager.dict initalised in ProcessCoordinator
-            robot_graph_data, # the robot graph data, which is a mp.manager.list initalised in ProcessCoordinator
-            log_queue, # the log queue, which is a mp.Queue
-            simulated_robot, # boolean, whether the robot is simulated or not. True or False
-            controller=None,
-            planner=None,
-            dt=None,
-            log=False,
-            debug=False
+            dt=0.1
+
     ):
-        super().__init__()
-        if log: setup_logging(log_queue)
 
-        self.logger = logging.getLogger(f'{__name__}.Orchestrator')
-        print(f"Logger name: {self.logger.name}")
-        print(f"Logger level: {self.logger.level}")
-        print(f"Logger handlers: {self.logger.handlers}")
-        print(f"Logger parent: {self.logger.parent}")
+        # Parameters
+        self.dt = dt
+        self.default_camera_idx = 0
 
-        ##### Shared Data (all mp.manager objects or wrappers for them) #####
-        self.running = running  # mp.manager.Value('b', True)
-        self.robot_command_q : StatefulCommandQueue = robot_command_q  # StatefulCommandQueue object
-        self.goal_position = goal_position  # Dict, Consumed (read) by Orchestrator to adjust robot's pose
-        self.robot_pose = robot_pose  # Updated by Orchestrator
-        self.robot_graph_data = robot_graph_data  # Updated by Orchestrator
+        self.quadrant_bounds = (0, COURT_XLIM, 0, COURT_YLIM)
+        self.scan_points = [(2.0, -2.0),(4.0, -2.0),(4.0, -4.0),(2.0, -4.0)]
+        self.curr_scan_point = 0
 
         #### Internal state variables
         self.last_update = None
         self.start_time = None
-        self.curr_command_id = None
-        self.current_command = None
-        self.simulated_robot: bool = simulated_robot  # boolean
-        self.debug = debug
-        self.starting_angle = None
-        self.theta_target = None
-
-        self.logger.info(f"Initialising Orchestrator:")
-        self.logger.info(f"Process ID: {os.getpid()} - Running worker: {self.name}")
-        # print(f"Process ID: {os.getpid()} - Running worker: {self.name}")
-        if not dt:
-            self.dt = 0.1  # Everything runs at 0.1s. The TentaclePlanner and PIController are also run at this interval.
-        else:
-            self.dt = dt
-        self.logger.info(f"    Using dt={self.dt}")
+        self.last_scan_time = None
+        self.mode = None
+        self.target_pose = Position(0,0,0,PositionTypes.ROBOT)
 
         ###### Subcomponents ######
         # These are initialised inside run()
-        self.robot = None
-        self.ultrasonic = None
-        self.servo = None
+        self.robot = DiffDriveRobot(0.1, real_time=True)  # Default
+        self.controller = PIController(real_time=True)  # Default
+        self.planner = TentaclePlanner()  # Default
+        self.ultrasonic = UltrasonicSensor(num_samples=20)  # Default
+        self.servo = ServoController()
+        self.camera = self.open_camera()
+        self.ball_detector = TennisBallDetector(collection_zone=(200, 150, 400, 350))
 
-        if not controller:
-            self.controller = PIController(real_time=True)  # Default
-        else:
-            self.controller = controller
-        controller_default = 'default' if controller else 'supplied'
-        self.logger.info(
-            f"    Initialised {controller_default} controller: Kp: {self.controller.Kp:.2f}, Ki: {self.controller.Ki:.2f}")
 
-        if not planner:
-            self.planner = TentaclePlanner()  # Default
-        else:
-            self.planner = planner
-        planner_default = 'default' if planner else 'supplied'
-        self.logger.info(f"    Initialised {planner_default} planner:")
-        self.logger.info(f"        Max linear velocity: {self.planner.max_linear_velocity:.2f}")
-        self.logger.info(f"        Max linear acceleration: {self.planner.max_acceleration:.2f}")
-        self.logger.info(f"        Max linear tolerance: {self.planner.max_linear_tolerance:.2f}")
-        self.logger.info(f"        Max angular velocity: {self.planner.max_angular_velocity:.2f}")
-        self.logger.info(f"        Max angular acceleration: {self.planner.max_angular_acceleration:.2f}")
-        self.logger.info(f"        Max angular tolerance: {self.planner.max_angular_tolerance:.2f}")
-
-        # print(f"Logger name: {self.logger.name}")
-        # print(f"Logger level: {self.logger.level}")
-        # print(f"Logger handlers: {self.logger.handlers}")
-        # print(f"Logger parent: {self.logger.parent}")
-
-    def get_dt(self):
-        now = time.time()
-        if self.last_update is None:
-            self.last_update = now
-            return self.dt
-
-        dt = now - self.last_update
-        self.last_update = now
-        return dt
-
-    def movement(self, x, y, th):
-        # Calculate control outputs (robot base linear and angular velocities) using the planner
-        inputs = self.planner.get_control_inputs(x, y, th, *self.robot.pose, strategy='tentacles')
-        # Calculate the duty cycles for the left and right wheels using the controller
-        linear_vel, angular_vel = inputs['linear_velocity'], inputs['angular_velocity']
-        goal_reached = inputs['goal_reached']
-        # if goal_reached: print(f"Goal reached! x:{goal.x}, y:{goal.y}, th:{goal.th}")
-
-        duty_cycle_l, duty_cycle_r, wl_desired, wr_desired = self.controller.drive(
-            linear_vel,
-            angular_vel,
-            self.robot.wl,
-            self.robot.wr
-        )
-
-        # print(f"\nGoal: {goal.x}, {goal.y}, {goal.th}, Current: {self.robot.x}, {self.robot.y}, {self.robot.th}")
-        # Apply the duty cycles to the robot wheels
-        # print(f"Duty Cycle: {duty_cycle_l}, {duty_cycle_r}\n\n")
-        self.robot.pose_update(duty_cycle_l, duty_cycle_r)
-
-        return {
-            "goal_reached": goal_reached,
-            "inputs": inputs,
-            "duty_cycle_l": duty_cycle_l,
-            "duty_cycle_r": duty_cycle_r,
-            "wl_desired": wl_desired,
-            "wr_desired": wr_desired
-        }
 
     def run(self):
+        rotate_at_start_angle = np.pi/2
+        track_rotate_angle_start = 0
+        self.mode = 'rotate_at_start' # 'rotate_at_start', 'search', 'drive', 'stamp', 'deposit', 'align', 'scan'
+
         try:
-            ### Initialisation ###
-            self.print_process()
-            self.start_time = time.time()
-
-            # Initialise Robot and Ultrasonic sensors
-            if not self.simulated_robot:
-                reality = 'real'
-                from robot_core.hardware.diff_drive_robot import DiffDriveRobot
-                self.robot = DiffDriveRobot(0.03, real_time=True)
-
-                from robot_core.perception.ultrasonic_sensors import UltrasonicSensor
-                self.ultrasonic = UltrasonicSensor(num_samples=20)
-
-                from robot_core.hardware.servo_controller import ServoController
-                self.servo = ServoController()
-            else:
-                reality = 'simulated'
-                from robot_core.hardware.simulated_diff_drive_robot import DiffDriveRobot
-                self.robot = DiffDriveRobot(0.03, real_time=True)
-
-            print(f"    Initialised {reality} robot.")
-
             # Main loop and logic
-            while self.running.value:
-                # self.logger.setLevel(logging.DEBUG)  # or logging.INFO
-                # print(f"Orchestrator running. dt = {self.get_dt():.2f}. Time: {time.time():.2f}")
-                command = self.get_command()
+            while True:
 
-                if command == RobotCommands.STOP:
+                if self.mode == 'rotate_at_start':
+                    # Rotate the robot at the start
+                    track_rotate_angle_start += self.robot.x
+                    # Rotate the robot
+                    if track_rotate_angle_start >= rotate_at_start_angle:
+                        self.robot.pose_update(0, 0)
+                        self.mode = 'search'
+                        self.start_time = time.time()
+                        print("Starting to drive")
+                    else:
+                        self.robot.pose_update(-50, 50)
+
+                        rotate_angle = np.pi / 2
+                        print("Starting to rotate")
+
+                if self.start_time is None:
+                    self.start_time = time.time()
+                if rotate_at_start:
+                    rotate_angle = np.pi / 2
+                    rotate_at_start = False
+
+                # Get the current command from the command queue
+
+
+
+
                     # print("### Orchestrator: in STOP command")
                     self.robot.pose_update(0, 0)
                     self.log_data(0,0,0,0,
@@ -192,7 +116,7 @@ class Orchestrator(mp.Process):
                     self.mark_command_done()
 
 
-                elif command == RobotCommands.DRIVE:
+                elif self.mode == 'search':
                     # print("### Orchestrator: in DRIVE command")
                     # Get the robot's goal position from the shared goal_position cmd_queue
                     goal = self.get_latest_goal()
@@ -209,12 +133,34 @@ class Orchestrator(mp.Process):
                     if self.is_goal_reached(goal): # TODO: position type-aware is_goal_reached IS NOT IMPLEMENTED YET
                         self.mark_command_done()
 
-                elif command == RobotCommands.STAMP:
+                elif self.mode == 'drive':
                     # print("### Orchestrator: in STAMP command")
                     # Stop the robot and collect the ball
                     self.robot.pose_update(0, 0) # stop the robot if it isn't already
                     self.servo.stamp()  # Activate the collection mechanism
                     self.mark_command_done()
+
+                elif self.mode == 'stamp':
+
+                elif self.mode == "deposit":
+
+                elif self.mode == "align":
+
+                elif self.mode == "scan":
+                    # print("### Orchestrator: in SCAN command")
+                    # Get the next scan point
+                    goal = self.scan_points[self.curr_scan_point]
+                    res = self.movement(goal[0], goal[1], 0)
+
+                    # If the goal has been reached, mark the command as done
+                    goal_check = Position(goal[0], goal[1], 0, PositionTypes.SCAN_POINT)
+                    if self.is_goal_reached(goal_check):
+                        self.curr_scan_point += 1
+                        if self.curr_scan_point >= len(self.scan_points):
+                            self.curr_scan_point = 0
+                            self.mode = 'search'
+                            print("Finished scanning. Returning to search mode.")
+                        self.mark_command_done()
 
                 elif command == RobotCommands.DEPOSIT:
                     # print("### Orchestrator: in DEPOSIT command")
@@ -303,50 +249,23 @@ class Orchestrator(mp.Process):
                         self.mark_command_done()
 
 
-                # Updating globally shared robot pose
-                self.robot_pose.update({
-                    'x': self.robot.x,
-                    'y': self.robot.y,
-                    'th': self.robot.th
-                })
 
                 # Sleep for 0.1s before the next iteration
-                if not self.simulated_robot:
-                    time.sleep(self.dt)
-                else:
-                    time.sleep(self.dt / 20)
+                time.sleep(self.dt)
 
-            # We only reach this point if the shared_data['running'] flag is False
-            self.logger.info("Orchestrator stopping, running Flag is false")
-            if self.robot is not None and not self.simulated_robot:
-                self.robot.set_motor_speed(0, 0)
-            self.robot.set_motor_speed(0, 0)
-            return
 
         except KeyboardInterrupt:
-            self.logger.info("Keyboard interrupt. Stopping robot.")
+            print("Keyboard interrupt. Stopping robot.")
 
         except Exception as e:
-            self.logger.error(f"Error in Orchestrator, Stopping robot: {e}")
-        if self.robot is not None and not self.simulated_robot:
+            print(f"Error in Orchestrator, Stopping robot: {e}")
             self.robot.set_motor_speed(0, 0)
         return
 
-    def log_data(self, wl_desired, wr_desired, duty_cycle_l, duty_cycle_r, goal: Position):
-        # Logging everything
-        log_point = RobotLogPoint(
-            pose=self.robot.pose,
-            current_wheel_w=(self.robot.wl, self.robot.wr),
-            target_wheel_w=(wl_desired, wr_desired),
-            duty_cycle_commands=(duty_cycle_l, duty_cycle_r),
-            goal_position=goal,
-            time=time.time()
-        )
-        self.robot_graph_data.append(log_point)
 
     #### PLACEHOLDER PLACEHOLDER PLACEHOLDER PLACEHOLDER NEED TO EDIT
     def is_goal_reached(self, goal: Position) -> bool:
-        x, y, th = self.robot_pose['x'], self.robot_pose['y'], self.robot_pose['th']
+        x, y, th = self.robot.pose
 
         # TODO: This function needs to be aware of the Position type. If it's the box, then it needs to be closer. If it's a ball, it needs to be 10-14 inches behind. etc.
         #
@@ -376,6 +295,61 @@ class Orchestrator(mp.Process):
 
         return False
 
+    def get_dt(self):
+        now = time.time()
+        if self.last_update is None:
+            self.last_update = now
+            return self.dt
+
+        dt = now - self.last_update
+        self.last_update = now
+        return dt
+
+    def _is_within_bounds(self, detection: BallDetection):
+        x, y = detection.x, detection.y
+        xmin, xmax, ymin, ymax = self.quadrant_bounds
+        return xmin <= x <= xmax and ymin <= y <= ymax
+
+    def open_camera(self):
+        MAX_IND = 3
+        camera_idxs = [self.default_camera_idx] + [x for x in range(MAX_IND) if x != self.default_camera_idx]
+        for idx in camera_idxs:
+            camera = cv2.VideoCapture(idx)
+            if camera.isOpened():
+                self.camera = camera
+                self.default_camera_idx = idx
+                print(f"VisionRunner: Camera opened successfully using idx {idx}")
+                return True
+
+        print(f"VisionRunner: Error: Could not open USB camera. Tried {camera_idxs}")
+        return False
+
+    def movement(self, x, y, th):
+        inputs = self.planner.get_control_inputs(x, y, th, *self.robot.pose, strategy='tentacles')
+        linear_vel, angular_vel = inputs['linear_velocity'], inputs['angular_velocity']
+        goal_reached = inputs['goal_reached']
+        # if goal_reached: print(f"Goal reached! x:{goal.x}, y:{goal.y}, th:{goal.th}")
+
+        duty_cycle_l, duty_cycle_r, wl_desired, wr_desired = self.controller.drive(
+            linear_vel,
+            angular_vel,
+            self.robot.wl,
+            self.robot.wr
+        )
+
+        # print(f"\nGoal: {goal.x}, {goal.y}, {goal.th}, Current: {self.robot.x}, {self.robot.y}, {self.robot.th}")
+        # Apply the duty cycles to the robot wheels
+        # print(f"Duty Cycle: {duty_cycle_l}, {duty_cycle_r}\n\n")
+        self.robot.pose_update(duty_cycle_l, duty_cycle_r)
+
+        return {
+            "goal_reached": goal_reached,
+            "inputs": inputs,
+            "duty_cycle_l": duty_cycle_l,
+            "duty_cycle_r": duty_cycle_r,
+            "wl_desired": wl_desired,
+            "wr_desired": wr_desired
+        }
 
     def get_latest_goal(self) -> Optional[Position]:
         res = self.goal_position.get('goal')
