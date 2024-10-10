@@ -259,6 +259,7 @@ class DecisionMaker:
         })
 
     def set_goal_to_deposit_box(self):
+        print(f"Setting goal to deposit box: {self.collection_box_location}")
         self.goal_position.update({
             'goal': Position(self.collection_box_location[0], self.collection_box_location[1], 0, PositionTypes.BOX),
             'time': time.time()

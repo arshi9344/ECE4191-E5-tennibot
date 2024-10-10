@@ -12,6 +12,7 @@ from robot_core.hardware.dimensions import COURT_XLIM, COURT_YLIM
 from robot_core.coordinator.commands import RobotCommands, StateWrapper, VisionCommands
 from robot_core.orchestration.scan_point_utils import ScanPointGenerator, ScanPoint
 from robot_core.orchestration.orchestrator_mp import Orchestrator
+from robot_core.perception.detection_results import BallDetection
 from robot_core.perception.vision_runner import VisionRunner
 from robot_core.utils.logging_utils import setup_logging, create_log_listener
 from robot_core.utils.robot_log_point import RobotLogPoint
@@ -43,7 +44,7 @@ class Coordinator:
             efficient_plotting=False,
             save_figs=False,
             deposit_time_limit=8*60, # seconds
-            max_ball_capacity=5
+            max_ball_capacity=4
 
     ):
         self.manager = Manager()
@@ -105,6 +106,13 @@ class Coordinator:
             matching_threshold=0.15, # in meters, the distance that balls are to be considered the same
             confidence_threshold=0.75  # 0 to 1, the minimum confidence for a ball to be considered
         )
+
+        self.occupancy_map.update([
+            BallDetection(1, -1, 0, 1, 0.9, True),
+            BallDetection(2, -1.5, 0, 1, 0.9, True),
+            BallDetection(3, 1, 0, 1, 0.9, True),
+            BallDetection(4, -1, 0, 1, 0.9, True)
+        ])
 
         # DecisionMaker
         self.decision_maker : DecisionMaker = DecisionMaker(
@@ -176,7 +184,7 @@ class Coordinator:
                 try:
                     detection_results = self.detection_results_q.get_nowait()
                     ball_detections = detection_results['ball_detection']
-                    self.occupancy_map.update(ball_detections)
+                    # self.occupancy_map.update(ball_detections)
                     print(f"Coordinator: Ball detections: {ball_detections}")
                 except queue.Empty:
                     pass

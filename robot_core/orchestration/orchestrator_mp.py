@@ -218,6 +218,8 @@ class Orchestrator(mp.Process):
                     # Stop the robot and collect the ball
                     self.robot.pose_update(0, 0) # stop the robot if it isn't already
                     self.servo.stamp()  # Activate the collection mechanism
+                    time.sleep(1)
+                    self.servo.stamp()  # Activate the collection mechanism
                     ## NEED A WAY TO CHECK IF BALL IS STILL PRESENT TO CONTROL IF ITS REMOVED FROM QUEUE (in process coordinator)
                     self.mark_command_done()
 
