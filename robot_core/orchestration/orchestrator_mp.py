@@ -172,7 +172,7 @@ class Orchestrator(mp.Process):
                 self.servo = ServoController()
 
                 self.servo.stamp()
-                self.servo.close_door()
+                self.servo.open_door()
 
             else:
                 reality = 'simulated'
