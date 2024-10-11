@@ -173,8 +173,8 @@ class Coordinator:
         balls = [
             BallDetection(1, -1, 0, 1, 0.9, True),
             BallDetection(2, -1.5, 0, 1, 0.9, True),
-            BallDetection(3, 1, 0, 1, 0.9, True),
-            BallDetection(4, -1, 0, 1, 0.9, True)
+            BallDetection(3, -1, 0, 1, 0.9, True),
+            BallDetection(3, -2, 0, 1, 0.9, True)
         ]
         self.start() # Starting Orchestrator and VisionRunner
         try:

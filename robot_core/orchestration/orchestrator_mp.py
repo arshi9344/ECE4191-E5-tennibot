@@ -295,7 +295,7 @@ class Orchestrator(mp.Process):
                     # Check if the current angle has reached the target (with tolerance)
                     if abs(angle_diff) > 0.02:  # Tolerance of 0.02 radians (~1 degree)
                         # Rotate by setting the motor speeds for in-place rotation
-                        self.robot.pose_update(-0.5, 0.5)
+                        self.robot.pose_update(-50, 50)
                         # Debugging output to show the progress
                         # print(f"Rotating... Current angle: {np.rad2deg(current_angle):.2f} degrees. Diff: {np.rad2deg(angle_diff):.2f} degrees")
 
