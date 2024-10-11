@@ -101,7 +101,7 @@ class DecisionMaker:
                 'trigger': 'decide_next_action',
                 'source': [RobotStates.DRIVE_TO_BALL, RobotStates.STAMP],
                 'dest': RobotStates.STAMP,
-                'conditions': ['is_ball_in_front', '_check_command_completion'],
+                'conditions': ['_check_command_completion'],
                 'unless': ['should_return_to_deposit']
             },
             {
@@ -294,7 +294,7 @@ class DecisionMaker:
         # insert logic to check if ball is in front. For now, just return True
         # pass this from coordinator, using
         # TODO: Add logic to see if ball is in front. DecisionMaker may need perception results? hmmm
-        return True
+        return False
 
 # Example usage
 if __name__ == '__main__':

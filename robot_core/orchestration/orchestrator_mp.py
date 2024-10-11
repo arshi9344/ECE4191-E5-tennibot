@@ -366,7 +366,7 @@ class Orchestrator(mp.Process):
             # when driving to the ball we should first angle ourselves appropriately before driving straight, everything seems to be handled easier without tentacle planner but idk
             # otherwise we will have to re-allign afterwards
             # THESE SHOULD NOT BE MAGIC NUMBERS. THEY ALSO NEED TO BE LESS THAN THE TOLERANCES IN TENTACLEPLANNER
-            if distance_to_goal > 0.22 or distance_to_goal <0.36:  # anywhere from 22cm to 36cm
+            if distance_to_goal > 0.16 or distance_to_goal <0.25:  # anywhere from 22cm to 36cm
                 return True
 
         elif goal.type == PositionTypes.SCAN_POINT:
